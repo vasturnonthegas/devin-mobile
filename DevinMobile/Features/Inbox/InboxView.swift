@@ -7,54 +7,52 @@ struct InboxView: View {
 
     @State private var path = NavigationPath()
     @State private var query = ""
+    @State private var scope: InboxScope = .active
     @State private var showNewSession = false
     @State private var showSettings = false
     @State private var showFilters = false
 
     var body: some View {
         NavigationStack(path: $path) {
-            VStack(spacing: 0) {
-                if !store.filter.isEmpty {
-                    SessionFilterChips(store: store)
+            scopedContent
+                .navigationTitle("Sessions")
+                .navigationDestination(for: Session.self) { session in
+                    SessionDetailView(store: store, sessionID: session.id)
                 }
-                content
-            }
-            .navigationTitle("Sessions")
-            .navigationDestination(for: Session.self) { session in
-                SessionDetailView(store: store, sessionID: session.id)
-            }
-            .searchable(text: $query, prompt: "Title, tag, or ID")
-            .refreshable { await store.refresh() }
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button { showSettings = true } label: {
-                        Label("Settings", systemImage: "gearshape")
+                .searchable(text: $query, prompt: "Title, tag, or ID")
+                .refreshable { await store.refresh() }
+                .toolbar {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button { showSettings = true } label: {
+                            Label("Settings", systemImage: "gearshape")
+                        }
+                    }
+                    if scope == .active {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button { showFilters = true } label: {
+                                Label("Filters", systemImage: store.filter.isEmpty
+                                      ? "line.3.horizontal.decrease.circle"
+                                      : "line.3.horizontal.decrease.circle.fill")
+                            }
+                        }
+                    }
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button { showNewSession = true } label: {
+                            Label("New session", systemImage: "plus")
+                        }
                     }
                 }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button { showFilters = true } label: {
-                        Label("Filters", systemImage: store.filter.isEmpty
-                              ? "line.3.horizontal.decrease.circle"
-                              : "line.3.horizontal.decrease.circle.fill")
+                .sheet(isPresented: $showFilters) {
+                    SessionFilterSheet(store: store)
+                }
+                .sheet(isPresented: $showNewSession) {
+                    NewSessionView(store: store) { created in
+                        path.append(created)
                     }
                 }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button { showNewSession = true } label: {
-                        Label("New session", systemImage: "plus")
-                    }
+                .sheet(isPresented: $showSettings) {
+                    SettingsView()
                 }
-            }
-            .sheet(isPresented: $showFilters) {
-                SessionFilterSheet(store: store)
-            }
-            .sheet(isPresented: $showNewSession) {
-                NewSessionView(store: store) { created in
-                    path.append(created)
-                }
-            }
-            .sheet(isPresented: $showSettings) {
-                SettingsView()
-            }
         }
         .task { store.startPolling() }
         .onDisappear { store.stopPolling() }
@@ -64,6 +62,30 @@ struct InboxView: View {
             case .background, .inactive: store.stopPolling()
             @unknown default: break
             }
+        }
+    }
+
+    @ViewBuilder
+    private var scopedContent: some View {
+        Group {
+            switch scope {
+            case .active:
+                VStack(spacing: 0) {
+                    if !store.filter.isEmpty {
+                        SessionFilterChips(store: store)
+                    }
+                    content
+                }
+            case .archived: ArchivedSessionsView(store: store, query: query)
+            }
+        }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            Picker("Scope", selection: $scope) {
+                ForEach(InboxScope.allCases) { Text($0.rawValue) }
+            }
+            .pickerStyle(.segmented)
+            .padding(.horizontal)
+            .padding(.bottom, 8)
         }
     }
 

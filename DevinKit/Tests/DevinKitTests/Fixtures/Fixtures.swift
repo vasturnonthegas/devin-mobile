@@ -62,6 +62,44 @@ enum Fixtures {
     }
     """
 
+    /// Second page of `sessionsPage` (`after=cursor-2`). Includes an unknown `origin`.
+    static let sessionsPage2 = """
+    {
+      "items": [
+        {
+          "session_id": "devin-jkl012",
+          "org_id": "org-xyz",
+          "status": "exit",
+          "status_detail": "finished",
+          "title": "Bump dependencies",
+          "url": "https://app.devin.ai/sessions/jkl012",
+          "tags": ["chore"],
+          "pull_requests": [{"pr_url": "https://github.com/acme/api/pull/40", "pr_state": "merged"}],
+          "acus_consumed": 1.5,
+          "created_at": 1756600000,
+          "updated_at": 1756600500,
+          "origin": "hologram"
+        },
+        {
+          "session_id": "devin-mno345",
+          "org_id": "org-xyz",
+          "status": "error",
+          "status_detail": "error",
+          "title": "Migrate DB",
+          "url": "https://app.devin.ai/sessions/mno345",
+          "tags": [],
+          "pull_requests": [],
+          "acus_consumed": 0.25,
+          "created_at": 1756500000,
+          "updated_at": 1756500100
+        }
+      ],
+      "end_cursor": null,
+      "has_next_page": false,
+      "total": 5
+    }
+    """
+
     static let messagesPage1 = """
     {
       "items": [

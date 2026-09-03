@@ -2,7 +2,7 @@ import SwiftUI
 import Observation
 import DevinKit
 
-enum InboxScope: String, CaseIterable, Identifiable {
+enum InboxTab: String, CaseIterable, Identifiable {
     case active = "Active"
     case archived = "Archived"
 

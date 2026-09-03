@@ -5,6 +5,7 @@ import DevinKit
 struct SessionTagsEditor: View {
     @State private var model: SessionTagsModel
     @State private var isAdding = false
+    @State private var isSubmitting = false
     @FocusState private var draftFocused: Bool
 
     init(store: SessionStore, sessionID: String) {
@@ -59,16 +60,21 @@ struct SessionTagsEditor: View {
             }
         }
         .onChange(of: draftFocused) { _, focused in
-            if !focused && model.draft.isEmpty { isAdding = false }
+            if !focused && !isSubmitting && model.draft.isEmpty { isAdding = false }
         }
     }
 
+    /// A rejected tag stays in the field so it can be corrected; anything else closes the field.
     private func submitDraft() {
+        isSubmitting = true
         Task {
-            if await model.add() {
-                draftFocused = true
-            } else if model.draft.isEmpty {
+            let added = await model.add()
+            isSubmitting = false
+            if added || model.draft.isEmpty {
                 isAdding = false
+            } else {
+                isAdding = true
+                draftFocused = true
             }
         }
     }

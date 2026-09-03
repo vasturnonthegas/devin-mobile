@@ -50,13 +50,15 @@ public struct SessionQuery: Hashable, Sendable {
     public var tags: [String]?
     public var isArchived: Bool?
     public var updatedAfter: Date?
+    public var parentSessionID: String?
 
-    public init(first: Int = 50, after: String? = nil, tags: [String]? = nil, isArchived: Bool? = false, updatedAfter: Date? = nil) {
+    public init(first: Int = 50, after: String? = nil, tags: [String]? = nil, isArchived: Bool? = false, updatedAfter: Date? = nil, parentSessionID: String? = nil) {
         self.first = first
         self.after = after
         self.tags = tags
         self.isArchived = isArchived
         self.updatedAfter = updatedAfter
+        self.parentSessionID = parentSessionID
     }
 
     var queryItems: [URLQueryItem] {
@@ -65,6 +67,7 @@ public struct SessionQuery: Hashable, Sendable {
         if let tags { items += tags.map { URLQueryItem(name: "tags", value: $0) } }
         if let isArchived { items.append(URLQueryItem(name: "is_archived", value: isArchived ? "true" : "false")) }
         if let updatedAfter { items.append(URLQueryItem(name: "updated_after", value: String(Int(updatedAfter.timeIntervalSince1970)))) }
+        if let parentSessionID { items.append(URLQueryItem(name: "parent_session_id", value: parentSessionID)) }
         return items
     }
 }

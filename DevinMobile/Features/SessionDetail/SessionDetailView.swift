@@ -107,6 +107,10 @@ struct SessionDetailView: View {
                     .font(.caption)
                     .foregroundStyle(.tertiary)
             }
+
+            if session.hasChildren {
+                ChildSessionsSection(store: model.store, parent: session)
+            }
         }
         .padding(12)
         .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 14))

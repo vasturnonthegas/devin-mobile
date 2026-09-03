@@ -84,7 +84,7 @@ public struct Session: Codable, Identifiable, Hashable, Sendable {
     public let statusDetail: SessionStatusDetail?
     public let title: String?
     public let url: URL
-    public let tags: [String]
+    public var tags: [String]
     public let pullRequests: [PullRequest]
     public let acusConsumed: Double
     public let createdAt: Date

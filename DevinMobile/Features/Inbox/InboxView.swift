@@ -8,7 +8,7 @@ struct InboxView: View {
     @State private var scope: InboxScopeModel
     @State private var path = NavigationPath()
     @State private var query = ""
-    @State private var scope: InboxScope = .active
+    @State private var tab: InboxTab = .active
     @State private var showNewSession = false
     @State private var showSettings = false
 
@@ -72,14 +72,14 @@ struct InboxView: View {
     @ViewBuilder
     private var scopedContent: some View {
         Group {
-            switch scope {
+            switch tab {
             case .active: content
             case .archived: ArchivedSessionsView(store: store, query: query)
             }
         }
         .safeAreaInset(edge: .top, spacing: 0) {
-            Picker("Scope", selection: $scope) {
-                ForEach(InboxScope.allCases) { Text($0.rawValue) }
+            Picker("Tab", selection: $tab) {
+                ForEach(InboxTab.allCases) { Text($0.rawValue) }
             }
             .pickerStyle(.segmented)
             .padding(.horizontal)

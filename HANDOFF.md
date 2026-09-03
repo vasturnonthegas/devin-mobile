@@ -1,0 +1,183 @@
+# Handoff: Devin Mobile (iOS)
+
+Written for the next Devin session (or human) picking this up. Goal of the project: a native iOS
+client that mirrors the Devin web app (app.devin.ai) closely enough that a developer can run their
+agents from a phone. Read this, then `README.md`, then the code — it's small.
+
+## 1. Where things stand
+
+| Area | State |
+| --- | --- |
+| `DevinKit/` Swift package (API client, models, Keychain) | Done for the session/message/playbook surface. 13 XCTest cases, pass on Linux + macOS. |
+| `DevinMobile/` SwiftUI app | Compiles cleanly for iOS Simulator on CI (`xcodebuild`, zero warnings). **Never run against the live API yet** — no PAT was available. Expect first-run bugs. |
+| CI (`.github/workflows/ci.yml`) | `swift test` on `swift:6.0-jammy` + `macos-15`; `xcodegen generate` + simulator build. Green on `main`. |
+| Devin environment blueprint | Installs Swift 6.0.3 on Linux so `cd DevinKit && swift test` works. Xcode is NOT available in Devin sessions; only CI compiles the app. |
+| Repo | `github.com/vasturnonthegas/devin-mobile`, trunk `main`, PR #1 merged. |
+
+### Build locally (macOS)
+
+```sh
+brew install xcodegen
+xcodegen generate                # .xcodeproj is gitignored; regenerate after adding/removing files
+open DevinMobile.xcodeproj       # Signing & Capabilities → pick team → Run
+cd DevinKit && swift test        # package tests, also fine on Linux
+```
+
+Sign in with a PAT (`cog_…`, Devin → Settings → Devin API). Enterprise PATs need the `org-…` ID.
+
+## 2. Architecture (keep it this way)
+
+```
+DevinKit (no UI, platform-agnostic, unit-tested with MockTransport)
+  Client/   DevinClient (async/await, Bearer, RFC 9457 → DevinError), HTTPTransport (injectable)
+  Models/   Session, SessionMessage, Playbook, Principal, Page<T>, NewSessionRequest/SessionQuery
+  Storage/  CredentialStore protocol; KeychainCredentialStore (iOS), InMemoryCredentialStore (tests/previews)
+
+DevinMobile (SwiftUI, iOS 17, @Observable + @MainActor, no third-party deps)
+  App/          AppModel (auth state machine), SessionStore (list + polling), RecentRepos
+  Features/     Onboarding, Inbox, SessionDetail (+ SessionDetailModel), NewSession, Settings
+  Support/      StatusBadge, PullRequestLink
+```
+
+Rules of thumb that the existing code follows:
+
+- **All API knowledge lives in DevinKit.** Views never see JSON keys or status strings; they use
+  `Session.bucket`, `statusSummary`, `needsAttention`, `displayTitle`.
+- **New API calls = client method + fixture + test.** Copy the pattern in `DevinClientTests.swift`
+  (assert URL, query, headers, body; decode a realistic fixture). Fixtures include unknown enum
+  values on purpose — decoding must tolerate them (`try?` on optional enums).
+- **Polling, not push.** The API has no webhook/SSE for session status. `SessionStore` polls the
+  list every 10 s while the inbox is visible; `SessionDetailModel` polls 5 s (active) / 30 s.
+- **Credentials only in Keychain** (`ai.devin.mobile` / `credentials`). Nothing is stored until
+  `GET /v3/self` + `GET /sessions?first=1` both succeed.
+- Swift 5 language mode with `SWIFT_STRICT_CONCURRENCY=complete` — keep things `Sendable`.
+- Comments are sparse by design. Don't document the diff; document the invariant.
+
+## 3. First thing to do: run it for real
+
+The app has only been compiled, not executed. Before adding features, get a PAT (ask the user — offer
+session-only vs saved secret) and:
+
+1. Sign in → confirm `/v3/self` returns `org_id` for a personal PAT. If it's null the org override
+   path kicks in; verify that flow too.
+2. Inbox → check every session decodes. Likely soft spots: `created_at`/`updated_at` are epoch
+   **integers** (seconds) per the OpenAPI spec; the decoder accepts seconds or ISO-8601 — confirm
+   the values aren't milliseconds. Check `pull_requests[].pr_state` values against `PullRequestLink`.
+3. Detail → transcript order, markdown rendering (`Text(LocalizedStringKey(...))` is a cheap
+   markdown renderer; long Devin messages with code blocks may look bad → see §4.3).
+4. Reply to a waiting session, archive one, terminate one, create one.
+5. Log anything that's wrong in a `## Known bugs` section here and fix in one PR.
+
+You cannot run the simulator from a Devin session. Use CI for compile checks and ask the user to
+run on device for behaviour; write the manual test steps in the PR.
+
+## 4. Roadmap — mirror the web UI
+
+Ordered by value to a mobile user. Each item lists the API it needs; all endpoints below are in the
+public v3 OpenAPI spec (`https://docs.devin.ai/v3-openapi.json` — fetch it, it's the source of
+truth; the summary below was taken from it).
+
+### 4.1 Sessions list parity (web "Sessions" page)
+
+- [ ] **Filters**: by repo (`repo_names`), by user (`user_ids`), tags (`tags`), origin
+      (`origins`), playbook (`playbook_id`), date ranges (`created_after/before`,
+      `updated_after/before`), archived toggle (`is_archived`). All are query params on
+      `GET …/sessions`; add them to `SessionQuery`. Surface as a filter sheet + chips above the list.
+- [ ] **Archived tab + Unarchive** — `POST …/sessions/{id}/unarchive`.
+- [ ] **Tag editing** — `GET/PUT/POST …/sessions/{id}/tags`. Web lets you add tags inline.
+- [ ] **Pagination** — inbox currently loads `first=100` and stops. Follow `end_cursor` with
+      "load more" / prefetch on scroll.
+- [ ] **"Mine" vs "Everyone"** toggle using `Principal.userID` vs `Session.userID`.
+- [ ] **Child sessions** — `parent_session_id` filter; show a "children" disclosure on a parent.
+- [ ] **Show `category`/`subcategory`, `origin`, `automation_id`** as secondary metadata.
+
+### 4.2 Session detail parity
+
+- [ ] **Attachments** — list (`GET …/sessions/{id}/attachments`, already in `DevinClient`) and
+      render images inline / QuickLook for others. Upload from Photos/Files/camera via
+      `POST …/attachments` (multipart `file`) then pass `attachment_urls` to
+      `POST …/messages` or to session creation. This is the most mobile-native win
+      ("send Devin a screenshot of the bug").
+- [ ] **Structured output** — `SessionResponse.structured_output` (JSON object). Render as a
+      collapsible tree / pretty JSON with copy.
+- [ ] **Session insights** — `GET …/sessions/{id}/insights` (+ `POST …/insights/generate`):
+      issues, timeline, action items, suggested prompt. Web shows this as a summary panel.
+      "Suggested prompt → start new session" is a nice one-tap flow.
+- [ ] **Pull request states** — poll `pull_requests[].pr_state`; show merged/closed badges;
+      deep-link to GitHub app if installed.
+- [ ] **Devin Review** — `POST/GET …/pr-reviews` to trigger/see review status for a PR URL.
+- [ ] **Better transcript rendering** — replace `LocalizedStringKey` markdown with a proper
+      renderer (AttributedString(markdown:) with `.full` syntax, or a small dependency such as
+      `swift-markdown-ui` if a dependency is acceptable — ask). Code blocks need monospaced,
+      horizontally scrollable rendering. Messages can be long; consider collapsing > N lines.
+- [ ] **Wake a sleeping session** — sending a message to a suspended session resumes it (that's what
+      the composer placeholder promises). Verify the API actually does this for `suspended`
+      sessions; if not, hide the composer for non-resumable ones.
+- [ ] **Rename** — web allows editing title. No `PATCH session` exists in v3 as of the last spec
+      pull; check again before promising it.
+
+### 4.3 New session parity
+
+- [ ] **Repo picker from the API** — `GET /v3beta1/organizations/{org}/repositories`
+      (`first`, `after`, `filter_name`; returns `repo_name`, `repo_path`, `repo_language`,
+      `repo_description`). Replace the `RecentRepos` UserDefaults hack with a searchable picker;
+      keep recents as a "pinned" section.
+- [ ] **Knowledge & secrets attach** — `knowledge_ids` (`GET …/knowledge/notes`,
+      `…/knowledge/folders`) and `secret_ids` (`GET …/secrets`) on `SessionCreateRequest`.
+- [ ] **Structured output schema** — `structured_output_schema` text field (advanced section).
+- [ ] **`bypass_approval`, `resumable`, `platform`** toggles in an "Advanced" disclosure.
+- [ ] **Attachments** on create (see 4.2).
+- [ ] **Session links** (`session_links`) — link to a parent/related session.
+- [ ] **Prompt templates** — playbook body preview (`GET …/playbooks/{id}`) before starting.
+
+### 4.4 Org management (web "Settings" pages) — lower priority on mobile, but cheap
+
+- [ ] Playbooks CRUD — `…/playbooks` (GET/POST/PUT/DELETE). Read-only list + detail first.
+- [ ] Knowledge notes CRUD — `…/knowledge/notes`, `…/knowledge/folders`.
+- [ ] Secrets — list/create/delete (`…/secrets`). Never display values (API doesn't return them).
+- [ ] Automations & schedules — `…/automations`, `…/schedules` (list, enable/disable, run
+      history via `automation_ids`/`schedule_id` session filters).
+- [ ] Usage — `…/metrics/usage`, `…/consumption/daily` for an ACU burn chart (Swift Charts).
+- [ ] Code scans — `…/code-scans/*` list + findings; remediate = starts a session.
+- [ ] Members — `/v3beta1/…/members/users` to resolve `user_id` → name in the inbox.
+
+Permissions: PATs act as the user. Service-user keys are RBAC-gated (`ViewOrgSessions`,
+`ManageOrgSessions`, `UseDevinSessions`, `ManageOrgPlaybooks`, …). Map 403 → hide the feature,
+don't crash. `DevinError.forbidden` already exists.
+
+### 4.5 Mobile-native (not in the web UI, but the reason this app exists)
+
+- [ ] **Local notifications**: `BGAppRefreshTask` every ~15 min; diff buckets vs last poll; notify on
+      `working → needsYou` and `→ finished`. Store last-known buckets in the app group container.
+- [ ] **Widget** (WidgetKit, App Group + shared Keychain access group — `KeychainCredentialStore`
+      already takes an `accessGroup`): "Needs you: N" + top 3 sessions; tap → deep link
+      `devinmobile://session/<id>`. Add URL scheme handling in `DevinMobileApp`.
+- [ ] **App Intents / Siri / Shortcuts**: `StartDevinSessionIntent(prompt, repo?)`,
+      `ReplyToDevinIntent(session, message)`, `WhatIsDevinWaitingOnIntent`. Reuse `DevinKit`
+      directly from the intent extension.
+- [ ] **Share Extension**: share a GitHub URL / text / image → prefilled New Session sheet.
+- [ ] **Live Activity** for a session you're watching (status + ACUs on the lock screen).
+- [ ] **Push via a relay** (optional, needs a server): tiny service that polls the API per user and
+      sends APNs. Only worth it if background refresh proves too laggy.
+- [ ] **iPad / macOS (Catalyst or Designed-for-iPad)**: `NavigationSplitView` for inbox + detail.
+- [ ] Haptics on state changes, Dynamic Type audit, VoiceOver labels on `StatusBadge`.
+
+## 5. Conventions for Devin sessions working here
+
+- Branch `devin/<unix-ts>-<slug>` off `main`; one feature per PR; PR body follows the repo's default
+  template (Summary; pseudo-diffs > prose).
+- Run `cd DevinKit && swift test` before pushing. Wait for the macOS CI job — it's the only compiler
+  for the SwiftUI target you have. Fix warnings; CI greps for `warning:` and `error:`.
+- New Swift files under `DevinMobile/` are picked up automatically by XcodeGen (`sources: DevinMobile`);
+  no `project.yml` edits needed unless you add a target (widget/intents/share extension — those
+  need new `targets:` entries plus entitlements for App Groups + Keychain sharing).
+- Don't add third-party packages without asking; the app is intentionally dependency-free.
+- Never log tokens. `DevinClient` builds the `Authorization` header in one place — keep it that way.
+- If the OpenAPI spec disagrees with this doc, the spec wins. Re-fetch it at session start.
+
+## 6. Open questions for the owner
+
+1. Is a small markdown dependency acceptable for transcript rendering, or stay dependency-free?
+2. Push notifications: OK to run a relay server, or stick with background refresh?
+3. Which org-management screens (4.4) matter on mobile? Suggested: none until 4.1–4.3 + 4.5 ship.
+4. App identity: bundle ID is `ai.devin.mobile` and accent colour is a placeholder; final name/icon?

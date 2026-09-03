@@ -11,8 +11,8 @@ agents from a phone. Read this, then `README.md`, then the code — it's small.
 | `DevinKit/` Swift package (API client, models, Keychain) | Done for the session/message/playbook surface. 13 XCTest cases, pass on Linux + macOS. |
 | `DevinMobile/` SwiftUI app | Compiles cleanly for iOS Simulator on CI (`xcodebuild`, zero warnings). **Never run against the live API yet** — no PAT was available. Expect first-run bugs. |
 | CI (`.github/workflows/ci.yml`) | `swift test` on `swift:6.0-jammy` + `macos-15`; `xcodegen generate` + simulator build. Green on `main`. |
-| Devin environment blueprint | Installs Swift 6.0.3 on Linux so `cd DevinKit && swift test` works. Xcode is NOT available in Devin sessions; only CI compiles the app. |
-| Repo | `github.com/vasturnonthegas/devin-mobile`, trunk `main`, PR #1 merged. |
+| Devin environment | Devin macOS sessions have Xcode (26.x) and iPhone simulators; `brew install xcodegen` is needed before `xcodegen generate`. Linux sessions only run `cd DevinKit && swift test`. |
+| Repo | `github.com/vasturnonthegas/devin-mobile`, trunk `main`. Work is tracked as GitHub issues (epics #3–#9) and `Sprint N` milestones — see §7. |
 
 ### Build locally (macOS)
 
@@ -68,8 +68,11 @@ session-only vs saved secret) and:
 4. Reply to a waiting session, archive one, terminate one, create one.
 5. Log anything that's wrong in a `## Known bugs` section here and fix in one PR.
 
-You cannot run the simulator from a Devin session. Use CI for compile checks and ask the user to
-run on device for behaviour; write the manual test steps in the PR.
+On a macOS Devin session, build and run in the Simulator (`xcodegen generate && xcodebuild -scheme
+DevinMobile -destination 'platform=iOS Simulator,name=iPhone 17 Pro' build`, then `xcrun simctl`
+to install/launch and `simctl io booted screenshot`). Attach screenshots and the manual test steps
+to the PR; the user verifies on device only for things the Simulator can't do (push, camera,
+widgets on a real home screen).
 
 ## 4. Roadmap — mirror the web UI
 
@@ -166,8 +169,8 @@ don't crash. `DevinError.forbidden` already exists.
 
 - Branch `devin/<unix-ts>-<slug>` off `main`; one feature per PR; PR body follows the repo's default
   template (Summary; pseudo-diffs > prose).
-- Run `cd DevinKit && swift test` before pushing. Wait for the macOS CI job — it's the only compiler
-  for the SwiftUI target you have. Fix warnings; CI greps for `warning:` and `error:`.
+- Run `cd DevinKit && swift test` before pushing. On macOS also build the app locally; CI greps for
+  `warning:` and `error:`, so fix warnings before pushing.
 - New Swift files under `DevinMobile/` are picked up automatically by XcodeGen (`sources: DevinMobile`);
   no `project.yml` edits needed unless you add a target (widget/intents/share extension — those
   need new `targets:` entries plus entitlements for App Groups + Keychain sharing).
@@ -175,9 +178,24 @@ don't crash. `DevinError.forbidden` already exists.
 - Never log tokens. `DevinClient` builds the `Authorization` header in one place — keep it that way.
 - If the OpenAPI spec disagrees with this doc, the spec wins. Re-fetch it at session start.
 
-## 6. Open questions for the owner
+## 6. Open questions for the owner (tracked in #14)
 
 1. Is a small markdown dependency acceptable for transcript rendering, or stay dependency-free?
 2. Push notifications: OK to run a relay server, or stick with background refresh?
 3. Which org-management screens (4.4) matter on mobile? Suggested: none until 4.1–4.3 + 4.5 ship.
 4. App identity: bundle ID is `ai.devin.mobile` and accent colour is a placeholder; final name/icon?
+
+## 7. Process
+
+Scrum, one-week sprints, tracked on GitHub:
+
+- **Epics** are issues labelled `epic` (#3 Sprint 0, #4 sessions list, #5 session detail, #6 new
+  session, #7 mobile-native, #8 release, #9 org management) with a task list of their stories.
+- **Stories** are issues labelled `story`/`bug`/`chore` with acceptance criteria, an estimate in
+  points (1/2/3/5/8) and a `Sprint N` milestone. `ready-for-devin` means a session can pick it up
+  without further clarification.
+- **One story → one branch → one PR** with `Closes #N` and the manual Simulator test steps from the
+  PR template. Merging closes the story.
+- **Sprint review** happens on the milestone: everything closed is demoed from a Simulator build;
+  anything open rolls to the next milestone with a one-line reason on the issue.
+- **Retro** is a comment on the sprint's tracking issue; changes to conventions land here in §5.

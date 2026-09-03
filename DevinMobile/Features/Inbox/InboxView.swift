@@ -225,6 +225,7 @@ struct SessionRow: View {
                 }
                 Spacer()
             }
+            SessionMetadataLine(session: session, font: .caption2)
             if !session.tags.isEmpty {
                 Text(session.tags.map { "#\($0)" }.joined(separator: "  "))
                     .font(.caption2)

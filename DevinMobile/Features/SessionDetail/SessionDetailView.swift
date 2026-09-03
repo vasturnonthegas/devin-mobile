@@ -102,6 +102,8 @@ struct SessionDetailView: View {
                     .font(.subheadline)
             }
 
+            SessionMetadataLine(session: session)
+
             SessionTagsEditor(store: model.store, sessionID: session.sessionID)
 
             if session.hasChildren {

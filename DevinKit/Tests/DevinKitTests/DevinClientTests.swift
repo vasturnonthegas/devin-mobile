@@ -109,7 +109,36 @@ final class DevinClientTests: XCTestCase {
         XCTAssertEqual(odd.status, .suspended)
         XCTAssertNil(odd.statusDetail)
         XCTAssertNil(odd.devinMode)
+        XCTAssertNil(odd.origin)
+        XCTAssertNil(odd.category)
+        XCTAssertEqual(odd.subcategory, "Whatever")
         XCTAssertEqual(odd.displayTitle, "devin-ghi789")
+    }
+
+    func testSecondaryMetadataDecodesNullable() async throws {
+        transport.stub(json: Fixtures.sessionsPage)
+        let page = try await client.sessions(org: "org-xyz")
+
+        let first = page.items[0]
+        XCTAssertEqual(first.category, .bugFixing)
+        XCTAssertEqual(first.subcategory, "Authentication")
+        XCTAssertEqual(first.automationID, "automation-77")
+        XCTAssertEqual(first.origin, .api)
+        XCTAssertEqual(first.categorySummary, "Bug fixing › Authentication")
+        XCTAssertEqual(first.metadataSummary, ["Bug fixing › Authentication", "API", "Automation"])
+
+        let second = page.items[1]
+        XCTAssertEqual(second.category, .featureDevelopment)
+        XCTAssertEqual(second.subcategory, "Other")
+        XCTAssertNil(second.automationID)
+        XCTAssertEqual(second.categorySummary, "Feature development")
+        XCTAssertEqual(second.metadataSummary, ["Feature development", "Slack"])
+
+        let odd = page.items[2]
+        XCTAssertNil(odd.category)
+        XCTAssertNil(odd.categorySummary)
+        XCTAssertNil(odd.automationID)
+        XCTAssertTrue(odd.metadataSummary.isEmpty)
     }
 
     func testBucketing() async throws {

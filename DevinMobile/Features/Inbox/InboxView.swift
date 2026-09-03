@@ -67,7 +67,6 @@ struct InboxView: View {
             .pickerStyle(.segmented)
             .padding(.horizontal)
             .padding(.bottom, 8)
-            .background(Color(.systemGroupedBackground))
         }
     }
 

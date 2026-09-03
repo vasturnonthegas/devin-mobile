@@ -38,6 +38,48 @@ final class DevinClientTests: XCTestCase {
         XCTAssertEqual(first.devinMode, .fast)
     }
 
+    func testListSessionsEncodesEveryFilterParam() async throws {
+        transport.stub(json: Fixtures.sessionsPage)
+
+        let query = SessionQuery(
+            first: 100,
+            after: "cursor-1",
+            tags: ["bug", "auth"],
+            isArchived: nil,
+            updatedAfter: Date(timeIntervalSince1970: 1_756_800_000),
+            updatedBefore: Date(timeIntervalSince1970: 1_756_803_600),
+            createdAfter: Date(timeIntervalSince1970: 1_756_700_000),
+            createdBefore: Date(timeIntervalSince1970: 1_756_700_500.9),
+            repoNames: ["acme/api", "acme/web"],
+            userIDs: ["user-1", "user-2"],
+            origins: [.webapp, .codeScan],
+            playbookID: "playbook-1"
+        )
+        _ = try await client.sessions(org: "org-xyz", query: query)
+
+        let items = URLComponents(url: transport.lastRequest.url!, resolvingAgainstBaseURL: false)!.queryItems!
+        func values(_ name: String) -> [String] { items.filter { $0.name == name }.compactMap(\.value) }
+
+        XCTAssertEqual(values("first"), ["100"])
+        XCTAssertEqual(values("after"), ["cursor-1"])
+        XCTAssertEqual(values("tags"), ["bug", "auth"])
+        XCTAssertEqual(values("repo_names"), ["acme/api", "acme/web"])
+        XCTAssertEqual(values("user_ids"), ["user-1", "user-2"])
+        XCTAssertEqual(values("origins"), ["webapp", "code_scan"])
+        XCTAssertEqual(values("playbook_id"), ["playbook-1"])
+        XCTAssertEqual(values("created_after"), ["1756700000"])
+        XCTAssertEqual(values("created_before"), ["1756700500"], "dates are whole epoch seconds")
+        XCTAssertEqual(values("updated_after"), ["1756800000"])
+        XCTAssertEqual(values("updated_before"), ["1756803600"])
+        XCTAssertEqual(values("is_archived"), [], "nil filters are omitted")
+    }
+
+    func testListSessionsOmitsUnsetFilters() async throws {
+        transport.stub(json: Fixtures.sessionsPage)
+        _ = try await client.sessions(org: "org-xyz", query: SessionQuery(first: 10))
+        XCTAssertEqual(transport.lastRequest.url?.query, "first=10&is_archived=false")
+    }
+
     func testUnknownEnumValuesDoNotBreakDecoding() async throws {
         transport.stub(json: Fixtures.sessionsPage)
         let page = try await client.sessions(org: "org-xyz")

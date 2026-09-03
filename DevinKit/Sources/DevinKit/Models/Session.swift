@@ -38,9 +38,27 @@ public enum DevinMode: String, Codable, Sendable, CaseIterable, Identifiable {
     }
 }
 
-public enum SessionOrigin: String, Codable, Sendable {
+public enum SessionOrigin: String, Codable, Sendable, CaseIterable, Identifiable {
     case webapp, slack, teams, api, linear, jira, automation, cli, desktop, other
     case codeScan = "code_scan"
+
+    public var id: String { rawValue }
+
+    public var displayName: String {
+        switch self {
+        case .webapp: "Web app"
+        case .slack: "Slack"
+        case .teams: "Teams"
+        case .api: "API"
+        case .linear: "Linear"
+        case .jira: "Jira"
+        case .automation: "Automation"
+        case .cli: "CLI"
+        case .desktop: "Desktop"
+        case .codeScan: "Code scan"
+        case .other: "Other"
+        }
+    }
 }
 
 public struct PullRequest: Codable, Hashable, Sendable {

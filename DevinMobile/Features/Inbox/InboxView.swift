@@ -9,36 +9,52 @@ struct InboxView: View {
     @State private var query = ""
     @State private var showNewSession = false
     @State private var showSettings = false
+    @State private var showFilters = false
 
     var body: some View {
         NavigationStack(path: $path) {
-            content
-                .navigationTitle("Sessions")
-                .navigationDestination(for: Session.self) { session in
-                    SessionDetailView(store: store, sessionID: session.id)
+            VStack(spacing: 0) {
+                if !store.filter.isEmpty {
+                    SessionFilterChips(store: store)
                 }
-                .searchable(text: $query, prompt: "Title, tag, or ID")
-                .refreshable { await store.refresh() }
-                .toolbar {
-                    ToolbarItem(placement: .topBarLeading) {
-                        Button { showSettings = true } label: {
-                            Label("Settings", systemImage: "gearshape")
-                        }
-                    }
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button { showNewSession = true } label: {
-                            Label("New session", systemImage: "plus")
-                        }
-                    }
-                }
-                .sheet(isPresented: $showNewSession) {
-                    NewSessionView(store: store) { created in
-                        path.append(created)
+                content
+            }
+            .navigationTitle("Sessions")
+            .navigationDestination(for: Session.self) { session in
+                SessionDetailView(store: store, sessionID: session.id)
+            }
+            .searchable(text: $query, prompt: "Title, tag, or ID")
+            .refreshable { await store.refresh() }
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button { showSettings = true } label: {
+                        Label("Settings", systemImage: "gearshape")
                     }
                 }
-                .sheet(isPresented: $showSettings) {
-                    SettingsView()
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { showFilters = true } label: {
+                        Label("Filters", systemImage: store.filter.isEmpty
+                              ? "line.3.horizontal.decrease.circle"
+                              : "line.3.horizontal.decrease.circle.fill")
+                    }
                 }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { showNewSession = true } label: {
+                        Label("New session", systemImage: "plus")
+                    }
+                }
+            }
+            .sheet(isPresented: $showFilters) {
+                SessionFilterSheet(store: store)
+            }
+            .sheet(isPresented: $showNewSession) {
+                NewSessionView(store: store) { created in
+                    path.append(created)
+                }
+            }
+            .sheet(isPresented: $showSettings) {
+                SettingsView()
+            }
         }
         .task { store.startPolling() }
         .onDisappear { store.stopPolling() }
@@ -65,10 +81,11 @@ struct InboxView: View {
                 Button("Retry") { Task { await store.refresh() } }
             }
         } else if groups.isEmpty {
+            let unfiltered = query.isEmpty && store.filter.isEmpty
             ContentUnavailableView(
-                query.isEmpty ? "No sessions yet" : "No matches",
-                systemImage: query.isEmpty ? "tray" : "magnifyingglass",
-                description: Text(query.isEmpty ? "Tap + to give Devin something to do." : "Try a different search.")
+                unfiltered ? "No sessions yet" : "No matches",
+                systemImage: unfiltered ? "tray" : "magnifyingglass",
+                description: Text(unfiltered ? "Tap + to give Devin something to do." : "Try a different search or clear a filter.")
             )
         } else {
             List {

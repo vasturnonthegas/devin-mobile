@@ -14,7 +14,17 @@ final class SessionStore {
     private(set) var lastRefreshed: Date?
     var error: DevinError?
 
+    /// Changing the filter drops the current list and reloads; a superseded in-flight refresh is ignored.
+    var filter = SessionFilter() {
+        didSet {
+            guard filter != oldValue else { return }
+            sessions = []
+            Task { await refresh() }
+        }
+    }
+
     @ObservationIgnored private var pollTask: Task<Void, Never>?
+    @ObservationIgnored private var refreshGeneration = 0
 
     init(client: DevinClient, orgID: String) {
         self.client = client
@@ -52,19 +62,28 @@ final class SessionStore {
 
     // MARK: Loading
 
+    /// Latest request wins: results from a refresh that was superseded (filter change, pull-to-refresh) are dropped.
     func refresh() async {
-        if isLoading { return }
+        refreshGeneration += 1
+        let generation = refreshGeneration
         isLoading = true
-        defer { isLoading = false }
+        let result: Result<Page<Session>, DevinError>
         do {
-            let page = try await client.sessions(org: orgID, query: SessionQuery(first: 100, isArchived: false))
+            result = .success(try await client.sessions(org: orgID, query: filter.query(first: 100)))
+        } catch let e as DevinError {
+            result = .failure(e)
+        } catch {
+            result = .failure(.transport(error.localizedDescription))
+        }
+        guard generation == refreshGeneration else { return }
+        isLoading = false
+        switch result {
+        case .success(let page):
             sessions = page.items
             lastRefreshed = .now
             error = nil
-        } catch let e as DevinError {
+        case .failure(let e):
             error = e
-        } catch {
-            self.error = .transport(error.localizedDescription)
         }
     }
 

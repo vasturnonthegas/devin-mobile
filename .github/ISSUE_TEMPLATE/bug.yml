@@ -1,0 +1,31 @@
+name: Bug
+description: Something the app does wrong against the live API or on device
+labels: ["bug"]
+body:
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected vs actual
+    validations:
+      required: true
+  - type: input
+    id: env
+    attributes:
+      label: Environment
+      placeholder: "iPhone 17 Pro simulator, iOS 26, commit abc1234"
+  - type: textarea
+    id: payload
+    attributes:
+      label: API response / logs (redact tokens)
+      render: json
+  - type: input
+    id: epic
+    attributes:
+      label: Epic or story this blocks
+      placeholder: "#12"

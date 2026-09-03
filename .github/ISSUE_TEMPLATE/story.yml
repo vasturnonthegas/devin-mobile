@@ -1,0 +1,47 @@
+name: Story
+description: A user-facing increment that fits in one sprint and one PR
+labels: ["story"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What and why
+      description: One or two sentences. Which web-UI behaviour or mobile-native need does this cover?
+    validations:
+      required: true
+  - type: textarea
+    id: api
+    attributes:
+      label: API surface
+      description: Endpoints and fields from https://docs.devin.ai/v3-openapi.json this story needs. "none" if UI-only.
+      placeholder: "GET /v3/organizations/{org}/sessions?is_archived=true"
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      value: |
+        - [ ]
+        - [ ]
+    validations:
+      required: true
+  - type: dropdown
+    id: estimate
+    attributes:
+      label: Estimate (points)
+      options: ["1", "2", "3", "5", "8"]
+    validations:
+      required: true
+  - type: input
+    id: epic
+    attributes:
+      label: Epic
+      placeholder: "#4"
+  - type: textarea
+    id: dod
+    attributes:
+      label: Definition of Done
+      value: |
+        - [ ] `cd DevinKit && swift test` passes; macOS CI green with zero warnings
+        - [ ] New API calls have a fixture + `DevinClientTests` case
+        - [ ] Manual test steps run on the iOS Simulator; screenshot in the PR
+        - [ ] `HANDOFF.md` updated if an invariant or convention changed

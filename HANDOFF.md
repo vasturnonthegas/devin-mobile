@@ -48,6 +48,11 @@ Rules of thumb that the existing code follows:
   values on purpose — decoding must tolerate them (`try?` on optional enums).
 - **Polling, not push.** The API has no webhook/SSE for session status. `SessionStore` polls the
   list every 10 s while the inbox is visible; `SessionDetailModel` polls 5 s (active) / 30 s.
+- **Cursor pagination.** `SessionStore` loads `first=50` pages and follows `end_cursor` via
+  `SessionQuery.after` (`loadMore()`, prefetched when the last 10 inbox rows appear). Polling
+  re-fetches only page 1 and upserts by `session_id` (`[Session].merging`) so deeper pages stay put.
+- **Simulator without a PAT.** Launch with `-MockAPI` (DEBUG only) to run against an in-process
+  fake API (`DevinMobile/Support/MockAPI.swift`, 130 sessions) backed by `InMemoryCredentialStore`.
 - **Credentials only in Keychain** (`ai.devin.mobile` / `credentials`). Nothing is stored until
   `GET /v3/self` + `GET /sessions?first=1` both succeed.
 - Swift 5 language mode with `SWIFT_STRICT_CONCURRENCY=complete` — keep things `Sendable`.
@@ -70,7 +75,8 @@ session-only vs saved secret) and:
 
 On a macOS Devin session, build and run in the Simulator (`xcodegen generate && xcodebuild -scheme
 DevinMobile -destination 'platform=iOS Simulator,name=iPhone 17 Pro' build`, then `xcrun simctl`
-to install/launch and `simctl io booted screenshot`). Attach screenshots and the manual test steps
+to install/launch and `simctl io booted screenshot`; pass `-MockAPI` to `simctl launch` when there
+is no PAT). Attach screenshots and the manual test steps
 to the PR; the user verifies on device only for things the Simulator can't do (push, camera,
 widgets on a real home screen).
 
@@ -88,8 +94,8 @@ truth; the summary below was taken from it).
       `GET …/sessions`; add them to `SessionQuery`. Surface as a filter sheet + chips above the list.
 - [ ] **Archived tab + Unarchive** — `POST …/sessions/{id}/unarchive`.
 - [ ] **Tag editing** — `GET/PUT/POST …/sessions/{id}/tags`. Web lets you add tags inline.
-- [ ] **Pagination** — inbox currently loads `first=100` and stops. Follow `end_cursor` with
-      "load more" / prefetch on scroll.
+- [x] **Pagination** — `SessionStore.loadMore()` follows `end_cursor`; prefetch on the last 10 rows
+      plus an explicit "Load more" footer.
 - [ ] **"Mine" vs "Everyone"** toggle using `Principal.userID` vs `Session.userID`.
 - [ ] **Child sessions** — `parent_session_id` filter; show a "children" disclosure on a parent.
 - [ ] **Show `category`/`subcategory`, `origin`, `automation_id`** as secondary metadata.

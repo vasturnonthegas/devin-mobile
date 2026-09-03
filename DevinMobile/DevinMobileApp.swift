@@ -3,7 +3,20 @@ import DevinKit
 
 @main
 struct DevinMobileApp: App {
-    @State private var app = AppModel()
+    @State private var app = AppModel(store: DevinMobileApp.credentialStore)
+
+    init() {
+        #if DEBUG
+        MockAPI.installIfEnabled()
+        #endif
+    }
+
+    private static var credentialStore: any CredentialStore {
+        #if DEBUG
+        if MockAPI.isEnabled { return MockAPI.credentialStore }
+        #endif
+        return KeychainCredentialStore()
+    }
 
     var body: some Scene {
         WindowGroup {

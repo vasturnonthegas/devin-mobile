@@ -71,12 +71,18 @@ struct InboxView: View {
                 description: Text(query.isEmpty ? "Tap + to give Devin something to do." : "Try a different search.")
             )
         } else {
+            let prefetchIDs = Set(groups.flatMap(\.sessions).suffix(Self.prefetchWindow).map(\.id))
             List {
                 ForEach(groups, id: \.bucket) { group in
                     Section {
                         ForEach(group.sessions) { session in
                             NavigationLink(value: session) {
                                 SessionRow(session: session)
+                            }
+                            .onAppear {
+                                if prefetchIDs.contains(session.id) {
+                                    Task { await store.loadMore() }
+                                }
                             }
                             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                                 Button("Archive", systemImage: "archivebox") {
@@ -97,6 +103,11 @@ struct InboxView: View {
                                     .foregroundStyle(.white)
                             }
                         }
+                    }
+                }
+                if store.hasMorePages {
+                    Section {
+                        InboxLoadMoreRow(store: store)
                     }
                 }
             }

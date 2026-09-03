@@ -9,10 +9,19 @@ final class SessionStore {
     let client: DevinClient
     let orgID: String
 
+    static let pageSize = 50
+
     private(set) var sessions: [Session] = []
     private(set) var isLoading = false
+    private(set) var isLoadingMore = false
     private(set) var lastRefreshed: Date?
     var error: DevinError?
+
+    /// Cursor of the deepest page loaded so far; nil once the list is exhausted (or before first load).
+    private(set) var nextCursor: String?
+    private var pagesLoaded = 0
+
+    var hasMorePages: Bool { nextCursor != nil }
 
     @ObservationIgnored private var pollTask: Task<Void, Never>?
 
@@ -52,14 +61,43 @@ final class SessionStore {
 
     // MARK: Loading
 
+    private func query(after cursor: String? = nil) -> SessionQuery {
+        SessionQuery(first: Self.pageSize, after: cursor, isArchived: false)
+    }
+
+    /// Re-fetches only the first page. Rows on deeper pages stay put and are upserted by ID when
+    /// they resurface; the cursor for the next page is left alone once anything past page 1 is loaded.
     func refresh() async {
         if isLoading { return }
         isLoading = true
         defer { isLoading = false }
         do {
-            let page = try await client.sessions(org: orgID, query: SessionQuery(first: 100, isArchived: false))
-            sessions = page.items
+            let page = try await client.sessions(org: orgID, query: query())
+            sessions = sessions.merging(page.items, pruneMissing: pagesLoaded <= 1)
+            if pagesLoaded <= 1 {
+                pagesLoaded = 1
+                nextCursor = page.hasNextPage ? page.endCursor : nil
+            }
             lastRefreshed = .now
+            error = nil
+        } catch let e as DevinError {
+            error = e
+        } catch {
+            self.error = .transport(error.localizedDescription)
+        }
+    }
+
+    /// Appends the page after `nextCursor`. No-op while a load is in flight or the list is exhausted.
+    func loadMore() async {
+        guard let cursor = nextCursor, !isLoadingMore else { return }
+        isLoadingMore = true
+        defer { isLoadingMore = false }
+        do {
+            let page = try await client.sessions(org: orgID, query: query(after: cursor))
+            guard nextCursor == cursor else { return }
+            sessions = sessions.merging(page.items)
+            pagesLoaded += 1
+            nextCursor = page.hasNextPage ? page.endCursor : nil
             error = nil
         } catch let e as DevinError {
             error = e

@@ -38,6 +38,28 @@ final class DevinClientTests: XCTestCase {
         XCTAssertEqual(first.devinMode, .fast)
     }
 
+    func testListSessionsPassesCursorAsAfter() async throws {
+        transport.stub(json: Fixtures.sessionsPage)
+        transport.stub(json: Fixtures.sessionsPage2)
+
+        let first = try await client.sessions(org: "org-xyz", query: SessionQuery(first: 50, isArchived: false))
+        let second = try await client.sessions(org: "org-xyz", query: SessionQuery(first: 50, after: first.endCursor, isArchived: false))
+
+        let firstItems = URLComponents(url: transport.requests[0].url!, resolvingAgainstBaseURL: false)!.queryItems!
+        XCTAssertFalse(firstItems.contains { $0.name == "after" })
+        let secondItems = URLComponents(url: transport.requests[1].url!, resolvingAgainstBaseURL: false)!.queryItems!
+        XCTAssertTrue(secondItems.contains(URLQueryItem(name: "after", value: "cursor-2")))
+        XCTAssertTrue(secondItems.contains(URLQueryItem(name: "first", value: "50")))
+        XCTAssertTrue(secondItems.contains(URLQueryItem(name: "is_archived", value: "false")))
+
+        XCTAssertEqual(second.items.map(\.sessionID), ["devin-jkl012", "devin-mno345"])
+        XCTAssertFalse(second.hasNextPage)
+        XCTAssertNil(second.endCursor)
+        XCTAssertNil(second.items[0].origin, "unknown origin must decode as nil")
+        XCTAssertEqual(second.items[0].bucket, .finished)
+        XCTAssertEqual(second.items[1].bucket, .failed)
+    }
+
     func testUnknownEnumValuesDoNotBreakDecoding() async throws {
         transport.stub(json: Fixtures.sessionsPage)
         let page = try await client.sessions(org: "org-xyz")
@@ -188,6 +210,33 @@ final class DevinClientTests: XCTestCase {
         } catch {
             XCTFail("wrong error type: \(error)")
         }
+    }
+}
+
+final class SessionListMergeTests: XCTestCase {
+    private func session(_ id: String, updatedAt: TimeInterval = 0) -> Session {
+        Session(sessionID: id, orgID: "org-xyz", status: .running, url: URL(string: "https://app.devin.ai/sessions/\(id)")!,
+                createdAt: Date(timeIntervalSince1970: 0), updatedAt: Date(timeIntervalSince1970: updatedAt))
+    }
+
+    func testAppendingPageKeepsExistingAndDeduplicates() {
+        let loaded = [session("a"), session("b")]
+        let merged = loaded.merging([session("b", updatedAt: 5), session("c")])
+        XCTAssertEqual(merged.map(\.sessionID), ["a", "b", "c"])
+        XCTAssertEqual(merged[1].updatedAt, Date(timeIntervalSince1970: 5), "row moved into the incoming page replaces the stale copy")
+    }
+
+    func testRefreshingFirstPageWithDeeperPagesLoadedRetainsOlderRows() {
+        let loaded = [session("a"), session("b"), session("c")]
+        let merged = loaded.merging([session("new"), session("a", updatedAt: 9)], pruneMissing: false)
+        XCTAssertEqual(merged.map(\.sessionID), ["a", "b", "c", "new"])
+        XCTAssertEqual(merged[0].updatedAt, Date(timeIntervalSince1970: 9))
+    }
+
+    func testRefreshingSoleFirstPagePrunesRowsThatFellOff() {
+        let loaded = [session("a"), session("archived")]
+        let merged = loaded.merging([session("a"), session("new")], pruneMissing: true)
+        XCTAssertEqual(merged.map(\.sessionID), ["a", "new"])
     }
 }
 

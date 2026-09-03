@@ -9,19 +9,31 @@ final class SessionStore {
     let client: DevinClient
     let orgID: String
 
+    static let pageSize = 50
+
     private(set) var sessions: [Session] = []
     private(set) var isLoading = false
+    private(set) var isLoadingMore = false
     private(set) var lastRefreshed: Date?
     var error: DevinError?
 
-    /// Changing the filter drops the current list and reloads; a superseded in-flight refresh is ignored.
+    /// Changing the filter drops the current list and pagination state and reloads;
+    /// a superseded in-flight refresh is ignored.
     var filter = SessionFilter() {
         didSet {
             guard filter != oldValue else { return }
             sessions = []
+            nextCursor = nil
+            pagesLoaded = 0
             Task { await refresh() }
         }
     }
+
+    /// Cursor of the deepest page loaded so far; nil once the list is exhausted (or before first load).
+    private(set) var nextCursor: String?
+    private var pagesLoaded = 0
+
+    var hasMorePages: Bool { nextCursor != nil }
 
     @ObservationIgnored private var pollTask: Task<Void, Never>?
     @ObservationIgnored private var refreshGeneration = 0
@@ -62,6 +74,14 @@ final class SessionStore {
 
     // MARK: Loading
 
+    private func query(after cursor: String? = nil) -> SessionQuery {
+        var query = filter.query(first: Self.pageSize)
+        query.after = cursor
+        return query
+    }
+
+    /// Re-fetches only the first page. Rows on deeper pages stay put and are upserted by ID when
+    /// they resurface; the cursor for the next page is left alone once anything past page 1 is loaded.
     /// Latest request wins: results from a refresh that was superseded (filter change, pull-to-refresh) are dropped.
     func refresh() async {
         refreshGeneration += 1
@@ -69,7 +89,7 @@ final class SessionStore {
         isLoading = true
         let result: Result<Page<Session>, DevinError>
         do {
-            result = .success(try await client.sessions(org: orgID, query: filter.query(first: 100)))
+            result = .success(try await client.sessions(org: orgID, query: query()))
         } catch let e as DevinError {
             result = .failure(e)
         } catch {
@@ -79,11 +99,34 @@ final class SessionStore {
         isLoading = false
         switch result {
         case .success(let page):
-            sessions = page.items
+            sessions = sessions.merging(page.items, pruneMissing: pagesLoaded <= 1)
+            if pagesLoaded <= 1 {
+                pagesLoaded = 1
+                nextCursor = page.hasNextPage ? page.endCursor : nil
+            }
             lastRefreshed = .now
             error = nil
         case .failure(let e):
             error = e
+        }
+    }
+
+    /// Appends the page after `nextCursor`. No-op while a load is in flight or the list is exhausted.
+    func loadMore() async {
+        guard let cursor = nextCursor, !isLoadingMore else { return }
+        isLoadingMore = true
+        defer { isLoadingMore = false }
+        do {
+            let page = try await client.sessions(org: orgID, query: query(after: cursor))
+            guard nextCursor == cursor else { return }
+            sessions = sessions.merging(page.items)
+            pagesLoaded += 1
+            nextCursor = page.hasNextPage ? page.endCursor : nil
+            error = nil
+        } catch let e as DevinError {
+            error = e
+        } catch {
+            self.error = .transport(error.localizedDescription)
         }
     }
 

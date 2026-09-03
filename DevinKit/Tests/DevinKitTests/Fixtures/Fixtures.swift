@@ -1,3 +1,5 @@
+import Foundation
+
 enum Fixtures {
     static let sessionRunningWaiting = """
     {
@@ -99,6 +101,51 @@ enum Fixtures {
       "total": 5
     }
     """
+
+    static let sessionArchived = """
+    {
+      "session_id": "devin-arch001",
+      "org_id": "org-xyz",
+      "status": "suspended",
+      "status_detail": "user_request",
+      "title": "Old spike",
+      "url": "https://app.devin.ai/sessions/arch001",
+      "tags": ["spike"],
+      "pull_requests": [{"pr_url": "https://github.com/acme/api/pull/7", "pr_state": "merged"}],
+      "acus_consumed": 1.5,
+      "created_at": 1756000000,
+      "updated_at": 1756100000,
+      "is_archived": true,
+      "origin": "teleporter"
+    }
+    """
+
+    static let archivedSessionsPage = """
+    {
+      "items": [
+        \(sessionArchived),
+        {
+          "session_id": "devin-arch002",
+          "org_id": "org-xyz",
+          "status": "exit",
+          "status_detail": "finished",
+          "title": "Shipped widget",
+          "url": "https://app.devin.ai/sessions/arch002",
+          "tags": [],
+          "pull_requests": [],
+          "acus_consumed": 4,
+          "created_at": 1755000000,
+          "updated_at": 1755100000,
+          "is_archived": true
+        }
+      ],
+      "end_cursor": null,
+      "has_next_page": false,
+      "total": 2
+    }
+    """
+
+    static let sessionUnarchived = sessionArchived.replacingOccurrences(of: "\"is_archived\": true", with: "\"is_archived\": false")
 
     static let messagesPage1 = """
     {

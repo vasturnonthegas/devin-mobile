@@ -124,6 +124,34 @@ final class DevinClientTests: XCTestCase {
         XCTAssertTrue(second.queryItems!.contains(URLQueryItem(name: "after", value: "c1")))
     }
 
+    func testListArchivedSessions() async throws {
+        transport.stub(json: Fixtures.archivedSessionsPage)
+
+        let page = try await client.sessions(org: "org-xyz", query: SessionQuery(first: 100, isArchived: true))
+
+        let items = URLComponents(url: transport.lastRequest.url!, resolvingAgainstBaseURL: false)!.queryItems!
+        XCTAssertTrue(items.contains(URLQueryItem(name: "is_archived", value: "true")))
+        XCTAssertEqual(page.items.count, 2)
+        XCTAssertTrue(page.items.allSatisfy(\.isArchived))
+        XCTAssertNil(page.items[0].origin, "unknown origin must decode as nil")
+        XCTAssertEqual(page.items[0].pullRequests.first?.state, "merged")
+        XCTAssertFalse(page.hasNextPage)
+    }
+
+    func testUnarchive() async throws {
+        transport.stub(json: Fixtures.sessionUnarchived)
+
+        let session = try await client.unarchive(org: "org-xyz", id: "devin-arch001")
+
+        XCTAssertEqual(transport.lastRequest.httpMethod, "POST")
+        XCTAssertEqual(transport.lastRequest.url?.path, "/v3/organizations/org-xyz/sessions/devin-arch001/unarchive")
+        XCTAssertNil(transport.lastRequest.url?.query)
+        XCTAssertNil(transport.lastRequest.httpBody)
+        XCTAssertEqual(transport.lastRequest.value(forHTTPHeaderField: "Authorization"), "Bearer cog_test")
+        XCTAssertEqual(session.sessionID, "devin-arch001")
+        XCTAssertFalse(session.isArchived)
+    }
+
     func testTerminateWithArchiveFlag() async throws {
         transport.stub(json: Fixtures.sessionRunningWaiting)
         _ = try await client.terminate(org: "org-xyz", id: "devin-abc123", archive: true)

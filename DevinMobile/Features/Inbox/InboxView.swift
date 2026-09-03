@@ -7,12 +7,13 @@ struct InboxView: View {
 
     @State private var path = NavigationPath()
     @State private var query = ""
+    @State private var scope: InboxScope = .active
     @State private var showNewSession = false
     @State private var showSettings = false
 
     var body: some View {
         NavigationStack(path: $path) {
-            content
+            scopedContent
                 .navigationTitle("Sessions")
                 .navigationDestination(for: Session.self) { session in
                     SessionDetailView(store: store, sessionID: session.id)
@@ -48,6 +49,24 @@ struct InboxView: View {
             case .background, .inactive: store.stopPolling()
             @unknown default: break
             }
+        }
+    }
+
+    @ViewBuilder
+    private var scopedContent: some View {
+        Group {
+            switch scope {
+            case .active: content
+            case .archived: ArchivedSessionsView(store: store, query: query)
+            }
+        }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            Picker("Scope", selection: $scope) {
+                ForEach(InboxScope.allCases) { Text($0.rawValue) }
+            }
+            .pickerStyle(.segmented)
+            .padding(.horizontal)
+            .padding(.bottom, 8)
         }
     }
 

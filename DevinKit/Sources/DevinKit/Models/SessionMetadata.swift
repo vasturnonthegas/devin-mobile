@@ -39,24 +39,6 @@ public enum SessionCategory: String, Codable, Sendable, CaseIterable {
     }
 }
 
-public extension SessionOrigin {
-    var displayName: String {
-        switch self {
-        case .webapp: "Web"
-        case .slack: "Slack"
-        case .teams: "Teams"
-        case .api: "API"
-        case .linear: "Linear"
-        case .jira: "Jira"
-        case .automation: "Automation"
-        case .cli: "CLI"
-        case .desktop: "Desktop"
-        case .codeScan: "Code scan"
-        case .other: "Other"
-        }
-    }
-}
-
 public extension Session {
     /// "Category › Subcategory", omitting the subcategory when it merely repeats the category
     /// or is the API's "Other" placeholder.

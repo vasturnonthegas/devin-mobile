@@ -102,11 +102,7 @@ struct SessionDetailView: View {
                     .font(.subheadline)
             }
 
-            if !session.tags.isEmpty {
-                Text(session.tags.map { "#\($0)" }.joined(separator: "  "))
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-            }
+            SessionTagsEditor(store: model.store, sessionID: session.sessionID)
         }
         .padding(12)
         .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 14))

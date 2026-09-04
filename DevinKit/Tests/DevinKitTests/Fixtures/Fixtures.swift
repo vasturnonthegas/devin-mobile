@@ -22,6 +22,8 @@ enum Fixtures {
       "child_session_ids": [],
       "user_id": "user-1",
       "category": "bug_fixing",
+      "subcategory": "Authentication",
+      "automation_id": "automation-77",
       "structured_output": null
     }
     """
@@ -41,7 +43,11 @@ enum Fixtures {
           "pull_requests": [],
           "acus_consumed": 0.5,
           "created_at": 1756800100,
-          "updated_at": 1756800200
+          "updated_at": 1756800200,
+          "origin": "slack",
+          "category": "feature_development",
+          "subcategory": "Other",
+          "automation_id": null
         },
         {
           "session_id": "devin-ghi789",
@@ -55,7 +61,10 @@ enum Fixtures {
           "acus_consumed": 12,
           "created_at": 1756700000,
           "updated_at": 1756700001,
-          "devin_mode": "brand_new_mode"
+          "devin_mode": "brand_new_mode",
+          "origin": "brand_new_origin",
+          "category": "brand_new_category",
+          "subcategory": "Whatever"
         }
       ],
       "end_cursor": "cursor-2",

@@ -96,6 +96,9 @@ public struct Session: Codable, Identifiable, Hashable, Sendable {
     public let parentSessionID: String?
     public let childSessionIDs: [String]?
     public let userID: String?
+    public let category: SessionCategory?
+    public let subcategory: String?
+    public let automationID: String?
 
     public var id: String { sessionID }
 
@@ -118,6 +121,9 @@ public struct Session: Codable, Identifiable, Hashable, Sendable {
         case parentSessionID = "parent_session_id"
         case childSessionIDs = "child_session_ids"
         case userID = "user_id"
+        case category
+        case subcategory
+        case automationID = "automation_id"
     }
 
     public init(
@@ -138,7 +144,10 @@ public struct Session: Codable, Identifiable, Hashable, Sendable {
         playbookID: String? = nil,
         parentSessionID: String? = nil,
         childSessionIDs: [String]? = nil,
-        userID: String? = nil
+        userID: String? = nil,
+        category: SessionCategory? = nil,
+        subcategory: String? = nil,
+        automationID: String? = nil
     ) {
         self.sessionID = sessionID
         self.orgID = orgID
@@ -158,6 +167,9 @@ public struct Session: Codable, Identifiable, Hashable, Sendable {
         self.parentSessionID = parentSessionID
         self.childSessionIDs = childSessionIDs
         self.userID = userID
+        self.category = category
+        self.subcategory = subcategory
+        self.automationID = automationID
     }
 
     public init(from decoder: Decoder) throws {
@@ -180,6 +192,9 @@ public struct Session: Codable, Identifiable, Hashable, Sendable {
         parentSessionID = try c.decodeIfPresent(String.self, forKey: .parentSessionID)
         childSessionIDs = try c.decodeIfPresent([String].self, forKey: .childSessionIDs)
         userID = try c.decodeIfPresent(String.self, forKey: .userID)
+        category = try? c.decodeIfPresent(SessionCategory.self, forKey: .category)
+        subcategory = try c.decodeIfPresent(String.self, forKey: .subcategory)
+        automationID = try c.decodeIfPresent(String.self, forKey: .automationID)
     }
 }
 

@@ -206,6 +206,11 @@ struct SessionRow: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+                if session.hasChildren {
+                    Label("\(session.childCount)", systemImage: "arrow.triangle.branch")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
                 if session.acusConsumed > 0 {
                     Text("\(session.acusConsumed, format: .number.precision(.fractionLength(0...1))) ACU")
                         .font(.caption.monospacedDigit())

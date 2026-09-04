@@ -103,6 +103,10 @@ struct SessionDetailView: View {
             }
 
             SessionTagsEditor(store: model.store, sessionID: session.sessionID)
+
+            if session.hasChildren {
+                ChildSessionsSection(store: model.store, parent: session)
+            }
         }
         .padding(12)
         .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 14))

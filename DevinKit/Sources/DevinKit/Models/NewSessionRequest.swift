@@ -58,6 +58,7 @@ public struct SessionQuery: Hashable, Sendable {
     public var userIDs: [String]?
     public var origins: [SessionOrigin]?
     public var playbookID: String?
+    public var parentSessionID: String?
 
     public init(
         first: Int = 50,
@@ -71,7 +72,8 @@ public struct SessionQuery: Hashable, Sendable {
         repoNames: [String]? = nil,
         userIDs: [String]? = nil,
         origins: [SessionOrigin]? = nil,
-        playbookID: String? = nil
+        playbookID: String? = nil,
+        parentSessionID: String? = nil
     ) {
         self.first = first
         self.after = after
@@ -85,6 +87,7 @@ public struct SessionQuery: Hashable, Sendable {
         self.userIDs = userIDs
         self.origins = origins
         self.playbookID = playbookID
+        self.parentSessionID = parentSessionID
     }
 
     var queryItems: [URLQueryItem] {
@@ -95,6 +98,7 @@ public struct SessionQuery: Hashable, Sendable {
         if let userIDs { items += userIDs.map { URLQueryItem(name: "user_ids", value: $0) } }
         if let origins { items += origins.map { URLQueryItem(name: "origins", value: $0.rawValue) } }
         if let playbookID { items.append(URLQueryItem(name: "playbook_id", value: playbookID)) }
+        if let parentSessionID { items.append(URLQueryItem(name: "parent_session_id", value: parentSessionID)) }
         if let isArchived { items.append(URLQueryItem(name: "is_archived", value: isArchived ? "true" : "false")) }
         if let createdAfter { items.append(.epoch("created_after", createdAfter)) }
         if let createdBefore { items.append(.epoch("created_before", createdBefore)) }

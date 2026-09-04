@@ -64,6 +64,68 @@ enum Fixtures {
     }
     """
 
+    static let sessionParent = """
+    {
+      "session_id": "devin-parent",
+      "org_id": "org-xyz",
+      "status": "running",
+      "status_detail": "working",
+      "title": "Orchestrate sprint 1",
+      "url": "https://app.devin.ai/sessions/parent",
+      "tags": [],
+      "pull_requests": [],
+      "acus_consumed": 8,
+      "created_at": 1756800000,
+      "updated_at": 1756809000,
+      "parent_session_id": null,
+      "child_session_ids": ["devin-child1", "devin-child2"]
+    }
+    """
+
+    static let childSessionsPage = """
+    {
+      "items": [
+        {
+          "session_id": "devin-child1",
+          "org_id": "org-xyz",
+          "status": "exit",
+          "status_detail": "finished",
+          "title": "A1: filters sheet",
+          "url": "https://app.devin.ai/sessions/child1",
+          "tags": [],
+          "pull_requests": [{"pr_url": "https://github.com/acme/api/pull/43", "pr_state": "merged"}],
+          "acus_consumed": 2.5,
+          "created_at": 1756800300,
+          "updated_at": 1756805000,
+          "is_archived": true,
+          "origin": "api",
+          "parent_session_id": "devin-parent",
+          "child_session_ids": []
+        },
+        {
+          "session_id": "devin-child2",
+          "org_id": "org-xyz",
+          "status": "running",
+          "status_detail": "waiting_for_user",
+          "title": "A6: child sessions",
+          "url": "https://app.devin.ai/sessions/child2",
+          "tags": [],
+          "pull_requests": [],
+          "acus_consumed": 1,
+          "created_at": 1756800400,
+          "updated_at": 1756808000,
+          "is_archived": false,
+          "origin": "orchestrator_v9",
+          "parent_session_id": "devin-parent",
+          "child_session_ids": null
+        }
+      ],
+      "end_cursor": null,
+      "has_next_page": false,
+      "total": 2
+    }
+    """
+
     /// Second page of `sessionsPage` (`after=cursor-2`). Includes an unknown `origin`.
     static let sessionsPage2 = """
     {

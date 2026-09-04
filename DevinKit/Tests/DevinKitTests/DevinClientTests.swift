@@ -121,6 +121,31 @@ final class DevinClientTests: XCTestCase {
         XCTAssertEqual(page.items[2].statusSummary, "Asleep")
     }
 
+    func testChildSessionsFiltersByParentAcrossArchiveState() async throws {
+        transport.stub(json: Fixtures.sessionParent)
+        let parent = try await client.session(org: "org-xyz", id: "devin-parent")
+        XCTAssertEqual(parent.childCount, 2)
+        XCTAssertTrue(parent.hasChildren)
+
+        transport.stub(json: Fixtures.childSessionsPage)
+        let page = try await client.childSessions(org: "org-xyz", of: parent.id)
+
+        let url = transport.lastRequest.url!
+        XCTAssertEqual(url.path, "/v3/organizations/org-xyz/sessions")
+        let items = URLComponents(url: url, resolvingAgainstBaseURL: false)!.queryItems!
+        XCTAssertTrue(items.contains(URLQueryItem(name: "parent_session_id", value: "devin-parent")))
+        XCTAssertTrue(items.contains(URLQueryItem(name: "first", value: "100")))
+        XCTAssertFalse(items.contains { $0.name == "is_archived" }, "archived children must still be listed")
+
+        XCTAssertEqual(page.items.map(\.sessionID), ["devin-child1", "devin-child2"])
+        XCTAssertEqual(page.items.map(\.parentSessionID), ["devin-parent", "devin-parent"])
+        XCTAssertTrue(page.items[0].isArchived)
+        XCTAssertEqual(page.items[0].bucket, .finished)
+        XCTAssertNil(page.items[1].origin, "unknown origin must decode as nil")
+        XCTAssertFalse(page.items[1].hasChildren)
+        XCTAssertFalse(page.hasNextPage)
+    }
+
     func testCreateSessionEncodesSnakeCaseBody() async throws {
         transport.stub(json: Fixtures.sessionRunningWaiting)
 

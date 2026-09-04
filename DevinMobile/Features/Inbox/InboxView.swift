@@ -12,6 +12,7 @@ struct InboxView: View {
     @State private var showNewSession = false
     @State private var showSettings = false
     @State private var members: MemberLookup
+    @State private var showFilters = false
 
     init(store: SessionStore) {
         _store = Bindable(store)
@@ -34,6 +35,15 @@ struct InboxView: View {
                             Label("Settings", systemImage: "gearshape")
                         }
                     }
+                    if tab == .active {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button { showFilters = true } label: {
+                                Label("Filters", systemImage: store.filter.isEmpty
+                                      ? "line.3.horizontal.decrease.circle"
+                                      : "line.3.horizontal.decrease.circle.fill")
+                            }
+                        }
+                    }
                     ToolbarItem(placement: .principal) {
                         Picker("Scope", selection: $scope.scope) {
                             ForEach(InboxScope.allCases) { scope in
@@ -49,6 +59,9 @@ struct InboxView: View {
                             Label("New session", systemImage: "plus")
                         }
                     }
+                }
+                .sheet(isPresented: $showFilters) {
+                    SessionFilterSheet(store: store)
                 }
                 .sheet(isPresented: $showNewSession) {
                     NewSessionView(store: store) { created in
@@ -76,7 +89,13 @@ struct InboxView: View {
     private var scopedContent: some View {
         Group {
             switch tab {
-            case .active: content
+            case .active:
+                VStack(spacing: 0) {
+                    if !store.filter.isEmpty {
+                        SessionFilterChips(store: store)
+                    }
+                    content
+                }
             case .archived: ArchivedSessionsView(store: store, query: query)
             }
         }
@@ -107,11 +126,12 @@ struct InboxView: View {
                 Button("Retry") { Task { await store.refresh() } }
             }
         } else if groups.isEmpty {
+            let unfiltered = query.isEmpty && store.filter.isEmpty
             let mode = scope.effectiveScope
             ContentUnavailableView(
-                query.isEmpty ? mode.emptyTitle : "No matches",
-                systemImage: query.isEmpty ? mode.systemImage : "magnifyingglass",
-                description: Text(query.isEmpty ? mode.emptyDescription : "Try a different search.")
+                unfiltered ? mode.emptyTitle : "No matches",
+                systemImage: unfiltered ? mode.systemImage : "magnifyingglass",
+                description: Text(unfiltered ? mode.emptyDescription : "Try a different search or clear a filter.")
             )
         } else {
             let prefetchIDs = Set(groups.flatMap(\.sessions).suffix(Self.prefetchWindow).map(\.id))
@@ -193,6 +213,11 @@ struct SessionRow: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+                if session.hasChildren {
+                    Label("\(session.childCount)", systemImage: "arrow.triangle.branch")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
                 if session.acusConsumed > 0 {
                     Text("\(session.acusConsumed, format: .number.precision(.fractionLength(0...1))) ACU")
                         .font(.caption.monospacedDigit())
@@ -207,6 +232,7 @@ struct SessionRow: View {
                 }
                 Spacer()
             }
+            SessionMetadataLine(session: session, font: .caption2)
             if !session.tags.isEmpty || owner != nil {
                 HStack(spacing: 8) {
                     if !session.tags.isEmpty {

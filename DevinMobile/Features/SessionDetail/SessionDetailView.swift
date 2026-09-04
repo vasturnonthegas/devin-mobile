@@ -102,10 +102,12 @@ struct SessionDetailView: View {
                     .font(.subheadline)
             }
 
-            if !session.tags.isEmpty {
-                Text(session.tags.map { "#\($0)" }.joined(separator: "  "))
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
+            SessionMetadataLine(session: session)
+
+            SessionTagsEditor(store: model.store, sessionID: session.sessionID)
+
+            if session.hasChildren {
+                ChildSessionsSection(store: model.store, parent: session)
             }
         }
         .padding(12)

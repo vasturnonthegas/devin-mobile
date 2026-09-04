@@ -38,9 +38,27 @@ public enum DevinMode: String, Codable, Sendable, CaseIterable, Identifiable {
     }
 }
 
-public enum SessionOrigin: String, Codable, Sendable {
+public enum SessionOrigin: String, Codable, Sendable, CaseIterable, Identifiable {
     case webapp, slack, teams, api, linear, jira, automation, cli, desktop, other
     case codeScan = "code_scan"
+
+    public var id: String { rawValue }
+
+    public var displayName: String {
+        switch self {
+        case .webapp: "Web app"
+        case .slack: "Slack"
+        case .teams: "Teams"
+        case .api: "API"
+        case .linear: "Linear"
+        case .jira: "Jira"
+        case .automation: "Automation"
+        case .cli: "CLI"
+        case .desktop: "Desktop"
+        case .codeScan: "Code scan"
+        case .other: "Other"
+        }
+    }
 }
 
 public struct PullRequest: Codable, Hashable, Sendable {
@@ -66,7 +84,7 @@ public struct Session: Codable, Identifiable, Hashable, Sendable {
     public let statusDetail: SessionStatusDetail?
     public let title: String?
     public let url: URL
-    public let tags: [String]
+    public var tags: [String]
     public let pullRequests: [PullRequest]
     public let acusConsumed: Double
     public let createdAt: Date
@@ -78,6 +96,9 @@ public struct Session: Codable, Identifiable, Hashable, Sendable {
     public let parentSessionID: String?
     public let childSessionIDs: [String]?
     public let userID: String?
+    public let category: SessionCategory?
+    public let subcategory: String?
+    public let automationID: String?
 
     public var id: String { sessionID }
 
@@ -100,6 +121,9 @@ public struct Session: Codable, Identifiable, Hashable, Sendable {
         case parentSessionID = "parent_session_id"
         case childSessionIDs = "child_session_ids"
         case userID = "user_id"
+        case category
+        case subcategory
+        case automationID = "automation_id"
     }
 
     public init(
@@ -120,7 +144,10 @@ public struct Session: Codable, Identifiable, Hashable, Sendable {
         playbookID: String? = nil,
         parentSessionID: String? = nil,
         childSessionIDs: [String]? = nil,
-        userID: String? = nil
+        userID: String? = nil,
+        category: SessionCategory? = nil,
+        subcategory: String? = nil,
+        automationID: String? = nil
     ) {
         self.sessionID = sessionID
         self.orgID = orgID
@@ -140,6 +167,9 @@ public struct Session: Codable, Identifiable, Hashable, Sendable {
         self.parentSessionID = parentSessionID
         self.childSessionIDs = childSessionIDs
         self.userID = userID
+        self.category = category
+        self.subcategory = subcategory
+        self.automationID = automationID
     }
 
     public init(from decoder: Decoder) throws {
@@ -162,6 +192,9 @@ public struct Session: Codable, Identifiable, Hashable, Sendable {
         parentSessionID = try c.decodeIfPresent(String.self, forKey: .parentSessionID)
         childSessionIDs = try c.decodeIfPresent([String].self, forKey: .childSessionIDs)
         userID = try c.decodeIfPresent(String.self, forKey: .userID)
+        category = try? c.decodeIfPresent(SessionCategory.self, forKey: .category)
+        subcategory = try c.decodeIfPresent(String.self, forKey: .subcategory)
+        automationID = try c.decodeIfPresent(String.self, forKey: .automationID)
     }
 }
 

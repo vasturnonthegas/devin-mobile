@@ -38,6 +38,48 @@ final class DevinClientTests: XCTestCase {
         XCTAssertEqual(first.devinMode, .fast)
     }
 
+    func testListSessionsEncodesEveryFilterParam() async throws {
+        transport.stub(json: Fixtures.sessionsPage)
+
+        let query = SessionQuery(
+            first: 100,
+            after: "cursor-1",
+            tags: ["bug", "auth"],
+            isArchived: nil,
+            updatedAfter: Date(timeIntervalSince1970: 1_756_800_000),
+            updatedBefore: Date(timeIntervalSince1970: 1_756_803_600),
+            createdAfter: Date(timeIntervalSince1970: 1_756_700_000),
+            createdBefore: Date(timeIntervalSince1970: 1_756_700_500.9),
+            repoNames: ["acme/api", "acme/web"],
+            userIDs: ["user-1", "user-2"],
+            origins: [.webapp, .codeScan],
+            playbookID: "playbook-1"
+        )
+        _ = try await client.sessions(org: "org-xyz", query: query)
+
+        let items = URLComponents(url: transport.lastRequest.url!, resolvingAgainstBaseURL: false)!.queryItems!
+        func values(_ name: String) -> [String] { items.filter { $0.name == name }.compactMap(\.value) }
+
+        XCTAssertEqual(values("first"), ["100"])
+        XCTAssertEqual(values("after"), ["cursor-1"])
+        XCTAssertEqual(values("tags"), ["bug", "auth"])
+        XCTAssertEqual(values("repo_names"), ["acme/api", "acme/web"])
+        XCTAssertEqual(values("user_ids"), ["user-1", "user-2"])
+        XCTAssertEqual(values("origins"), ["webapp", "code_scan"])
+        XCTAssertEqual(values("playbook_id"), ["playbook-1"])
+        XCTAssertEqual(values("created_after"), ["1756700000"])
+        XCTAssertEqual(values("created_before"), ["1756700500"], "dates are whole epoch seconds")
+        XCTAssertEqual(values("updated_after"), ["1756800000"])
+        XCTAssertEqual(values("updated_before"), ["1756803600"])
+        XCTAssertEqual(values("is_archived"), [], "nil filters are omitted")
+    }
+
+    func testListSessionsOmitsUnsetFilters() async throws {
+        transport.stub(json: Fixtures.sessionsPage)
+        _ = try await client.sessions(org: "org-xyz", query: SessionQuery(first: 10))
+        XCTAssertEqual(transport.lastRequest.url?.query, "first=10&is_archived=false")
+    }
+
     func testListSessionsPassesCursorAsAfter() async throws {
         transport.stub(json: Fixtures.sessionsPage)
         transport.stub(json: Fixtures.sessionsPage2)
@@ -67,7 +109,36 @@ final class DevinClientTests: XCTestCase {
         XCTAssertEqual(odd.status, .suspended)
         XCTAssertNil(odd.statusDetail)
         XCTAssertNil(odd.devinMode)
+        XCTAssertNil(odd.origin)
+        XCTAssertNil(odd.category)
+        XCTAssertEqual(odd.subcategory, "Whatever")
         XCTAssertEqual(odd.displayTitle, "devin-ghi789")
+    }
+
+    func testSecondaryMetadataDecodesNullable() async throws {
+        transport.stub(json: Fixtures.sessionsPage)
+        let page = try await client.sessions(org: "org-xyz")
+
+        let first = page.items[0]
+        XCTAssertEqual(first.category, .bugFixing)
+        XCTAssertEqual(first.subcategory, "Authentication")
+        XCTAssertEqual(first.automationID, "automation-77")
+        XCTAssertEqual(first.origin, .api)
+        XCTAssertEqual(first.categorySummary, "Bug fixing › Authentication")
+        XCTAssertEqual(first.metadataSummary, ["Bug fixing › Authentication", "API", "Automation"])
+
+        let second = page.items[1]
+        XCTAssertEqual(second.category, .featureDevelopment)
+        XCTAssertEqual(second.subcategory, "Other")
+        XCTAssertNil(second.automationID)
+        XCTAssertEqual(second.categorySummary, "Feature development")
+        XCTAssertEqual(second.metadataSummary, ["Feature development", "Slack"])
+
+        let odd = page.items[2]
+        XCTAssertNil(odd.category)
+        XCTAssertNil(odd.categorySummary)
+        XCTAssertNil(odd.automationID)
+        XCTAssertTrue(odd.metadataSummary.isEmpty)
     }
 
     func testBucketing() async throws {
@@ -77,6 +148,31 @@ final class DevinClientTests: XCTestCase {
         XCTAssertTrue(page.items[0].needsAttention)
         XCTAssertEqual(page.items[0].statusSummary, "Waiting for you")
         XCTAssertEqual(page.items[2].statusSummary, "Asleep")
+    }
+
+    func testChildSessionsFiltersByParentAcrossArchiveState() async throws {
+        transport.stub(json: Fixtures.sessionParent)
+        let parent = try await client.session(org: "org-xyz", id: "devin-parent")
+        XCTAssertEqual(parent.childCount, 2)
+        XCTAssertTrue(parent.hasChildren)
+
+        transport.stub(json: Fixtures.childSessionsPage)
+        let page = try await client.childSessions(org: "org-xyz", of: parent.id)
+
+        let url = transport.lastRequest.url!
+        XCTAssertEqual(url.path, "/v3/organizations/org-xyz/sessions")
+        let items = URLComponents(url: url, resolvingAgainstBaseURL: false)!.queryItems!
+        XCTAssertTrue(items.contains(URLQueryItem(name: "parent_session_id", value: "devin-parent")))
+        XCTAssertTrue(items.contains(URLQueryItem(name: "first", value: "100")))
+        XCTAssertFalse(items.contains { $0.name == "is_archived" }, "archived children must still be listed")
+
+        XCTAssertEqual(page.items.map(\.sessionID), ["devin-child1", "devin-child2"])
+        XCTAssertEqual(page.items.map(\.parentSessionID), ["devin-parent", "devin-parent"])
+        XCTAssertTrue(page.items[0].isArchived)
+        XCTAssertEqual(page.items[0].bucket, .finished)
+        XCTAssertNil(page.items[1].origin, "unknown origin must decode as nil")
+        XCTAssertFalse(page.items[1].hasChildren)
+        XCTAssertFalse(page.hasNextPage)
     }
 
     func testCreateSessionEncodesSnakeCaseBody() async throws {
@@ -157,6 +253,59 @@ final class DevinClientTests: XCTestCase {
         _ = try await client.terminate(org: "org-xyz", id: "devin-abc123", archive: true)
         XCTAssertEqual(transport.lastRequest.httpMethod, "DELETE")
         XCTAssertEqual(transport.lastRequest.url?.query, "archive=true")
+    }
+
+    func testSessionTagsGet() async throws {
+        transport.stub(json: Fixtures.sessionTags)
+        let tags = try await client.sessionTags(org: "org-xyz", id: "devin-abc123")
+        XCTAssertEqual(transport.lastRequest.httpMethod, "GET")
+        XCTAssertEqual(transport.lastRequest.url?.path, "/v3/organizations/org-xyz/sessions/devin-abc123/tags")
+        XCTAssertNil(transport.lastRequest.url?.query)
+        XCTAssertNil(transport.lastRequest.httpBody)
+        XCTAssertEqual(transport.lastRequest.value(forHTTPHeaderField: "Authorization"), "Bearer cog_test")
+        XCTAssertEqual(tags, ["bug", "auth", "Mobile Sprint 1"])
+    }
+
+    func testReplaceTagsPutsFullSet() async throws {
+        transport.stub(json: Fixtures.sessionTags)
+        let tags = try await client.replaceTags(["bug", "auth", "Mobile Sprint 1"], org: "org-xyz", id: "devin-abc123")
+        XCTAssertEqual(transport.lastRequest.httpMethod, "PUT")
+        XCTAssertEqual(transport.lastRequest.url?.path, "/v3/organizations/org-xyz/sessions/devin-abc123/tags")
+        XCTAssertEqual(transport.lastRequest.value(forHTTPHeaderField: "Content-Type"), "application/json")
+        XCTAssertEqual(transport.lastRequest.bodyJSON["tags"] as? [String], ["bug", "auth", "Mobile Sprint 1"])
+        XCTAssertEqual(transport.lastRequest.bodyJSON.count, 1)
+        XCTAssertEqual(tags, ["bug", "auth", "Mobile Sprint 1"])
+    }
+
+    func testAppendTagsPostsOnlyNewTags() async throws {
+        transport.stub(json: Fixtures.sessionTags)
+        let tags = try await client.appendTags(["Mobile Sprint 1"], org: "org-xyz", id: "devin-abc123")
+        XCTAssertEqual(transport.lastRequest.httpMethod, "POST")
+        XCTAssertEqual(transport.lastRequest.url?.path, "/v3/organizations/org-xyz/sessions/devin-abc123/tags")
+        XCTAssertEqual(transport.lastRequest.bodyJSON["tags"] as? [String], ["Mobile Sprint 1"])
+        XCTAssertEqual(tags.count, 3, "server returns the merged set, not just the appended tags")
+    }
+
+    func testReplaceTagsRejectedIsTypedError() async {
+        transport.stub(422, json: Fixtures.problem422Tags)
+        do {
+            _ = try await client.replaceTags(["nope"], org: "org-xyz", id: "devin-abc123")
+            XCTFail("expected error")
+        } catch let error as DevinError {
+            guard case .http(let status, let problem) = error else { return XCTFail("expected http error, got \(error)") }
+            XCTAssertEqual(status, 422)
+            XCTAssertEqual(problem?.detail, "Tag 'nope' is not in the organization's allowed tags")
+        } catch {
+            XCTFail("wrong error type: \(error)")
+        }
+    }
+
+    func testSessionTagsNormalize() {
+        XCTAssertEqual(SessionTags.normalize("  #mobile "), "mobile")
+        XCTAssertEqual(SessionTags.normalize("##Sprint 1"), "Sprint 1")
+        XCTAssertNil(SessionTags.normalize("  # "))
+        XCTAssertNil(SessionTags.normalize(""))
+        XCTAssertEqual(SessionTags.maxCount, 50)
     }
 
     func testMeDecodesOrg() async throws {

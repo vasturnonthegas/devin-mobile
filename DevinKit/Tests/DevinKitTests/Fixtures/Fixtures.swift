@@ -22,6 +22,8 @@ enum Fixtures {
       "child_session_ids": [],
       "user_id": "user-1",
       "category": "bug_fixing",
+      "subcategory": "Authentication",
+      "automation_id": "automation-77",
       "structured_output": null
     }
     """
@@ -41,7 +43,11 @@ enum Fixtures {
           "pull_requests": [],
           "acus_consumed": 0.5,
           "created_at": 1756800100,
-          "updated_at": 1756800200
+          "updated_at": 1756800200,
+          "origin": "slack",
+          "category": "feature_development",
+          "subcategory": "Other",
+          "automation_id": null
         },
         {
           "session_id": "devin-ghi789",
@@ -55,12 +61,77 @@ enum Fixtures {
           "acus_consumed": 12,
           "created_at": 1756700000,
           "updated_at": 1756700001,
-          "devin_mode": "brand_new_mode"
+          "devin_mode": "brand_new_mode",
+          "origin": "brand_new_origin",
+          "category": "brand_new_category",
+          "subcategory": "Whatever"
         }
       ],
       "end_cursor": "cursor-2",
       "has_next_page": true,
       "total": 3
+    }
+    """
+
+    static let sessionParent = """
+    {
+      "session_id": "devin-parent",
+      "org_id": "org-xyz",
+      "status": "running",
+      "status_detail": "working",
+      "title": "Orchestrate sprint 1",
+      "url": "https://app.devin.ai/sessions/parent",
+      "tags": [],
+      "pull_requests": [],
+      "acus_consumed": 8,
+      "created_at": 1756800000,
+      "updated_at": 1756809000,
+      "parent_session_id": null,
+      "child_session_ids": ["devin-child1", "devin-child2"]
+    }
+    """
+
+    static let childSessionsPage = """
+    {
+      "items": [
+        {
+          "session_id": "devin-child1",
+          "org_id": "org-xyz",
+          "status": "exit",
+          "status_detail": "finished",
+          "title": "A1: filters sheet",
+          "url": "https://app.devin.ai/sessions/child1",
+          "tags": [],
+          "pull_requests": [{"pr_url": "https://github.com/acme/api/pull/43", "pr_state": "merged"}],
+          "acus_consumed": 2.5,
+          "created_at": 1756800300,
+          "updated_at": 1756805000,
+          "is_archived": true,
+          "origin": "api",
+          "parent_session_id": "devin-parent",
+          "child_session_ids": []
+        },
+        {
+          "session_id": "devin-child2",
+          "org_id": "org-xyz",
+          "status": "running",
+          "status_detail": "waiting_for_user",
+          "title": "A6: child sessions",
+          "url": "https://app.devin.ai/sessions/child2",
+          "tags": [],
+          "pull_requests": [],
+          "acus_consumed": 1,
+          "created_at": 1756800400,
+          "updated_at": 1756808000,
+          "is_archived": false,
+          "origin": "orchestrator_v9",
+          "parent_session_id": "devin-parent",
+          "child_session_ids": null
+        }
+      ],
+      "end_cursor": null,
+      "has_next_page": false,
+      "total": 2
     }
     """
 
@@ -166,6 +237,14 @@ enum Fixtures {
       "end_cursor": null,
       "has_next_page": false
     }
+    """
+
+    static let sessionTags = """
+    {"tags": ["bug", "auth", "Mobile Sprint 1"], "future_field": "ignored"}
+    """
+
+    static let problem422Tags = """
+    {"status": 422, "title": "Unprocessable Content", "detail": "Tag 'nope' is not in the organization's allowed tags", "type": "about:blank"}
     """
 
     static let selfPAT = """

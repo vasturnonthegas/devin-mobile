@@ -65,6 +65,10 @@ public struct DevinClient: Sendable {
         try await request(.post, "/v3/organizations/\(org)/sessions/\(id)/archive")
     }
 
+    public func unarchive(org: String, id: String) async throws -> Session {
+        try await request(.post, "/v3/organizations/\(org)/sessions/\(id)/unarchive")
+    }
+
     public func terminate(org: String, id: String, archive: Bool = false) async throws -> Session {
         try await request(.delete, "/v3/organizations/\(org)/sessions/\(id)",
                           query: [URLQueryItem(name: "archive", value: archive ? "true" : "false")])

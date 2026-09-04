@@ -5,14 +5,22 @@ struct InboxView: View {
     @Bindable var store: SessionStore
     @Environment(\.scenePhase) private var scenePhase
 
+    @State private var scope: InboxScopeModel
     @State private var path = NavigationPath()
     @State private var query = ""
+    @State private var tab: InboxTab = .active
     @State private var showNewSession = false
     @State private var showSettings = false
+    @State private var showFilters = false
+
+    init(store: SessionStore) {
+        _store = Bindable(store)
+        _scope = State(initialValue: InboxScopeModel(client: store.client, orgID: store.orgID))
+    }
 
     var body: some View {
         NavigationStack(path: $path) {
-            content
+            scopedContent
                 .navigationTitle("Sessions")
                 .navigationDestination(for: Session.self) { session in
                     SessionDetailView(store: store, sessionID: session.id)
@@ -25,11 +33,33 @@ struct InboxView: View {
                             Label("Settings", systemImage: "gearshape")
                         }
                     }
+                    if tab == .active {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button { showFilters = true } label: {
+                                Label("Filters", systemImage: store.filter.isEmpty
+                                      ? "line.3.horizontal.decrease.circle"
+                                      : "line.3.horizontal.decrease.circle.fill")
+                            }
+                        }
+                    }
+                    ToolbarItem(placement: .principal) {
+                        Picker("Scope", selection: $scope.scope) {
+                            ForEach(InboxScope.allCases) { scope in
+                                Text(scope.title).tag(scope)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .frame(maxWidth: 220)
+                        .disabled(!scope.isMineAvailable)
+                    }
                     ToolbarItem(placement: .topBarTrailing) {
                         Button { showNewSession = true } label: {
                             Label("New session", systemImage: "plus")
                         }
                     }
+                }
+                .sheet(isPresented: $showFilters) {
+                    SessionFilterSheet(store: store)
                 }
                 .sheet(isPresented: $showNewSession) {
                     NewSessionView(store: store) { created in
@@ -41,6 +71,7 @@ struct InboxView: View {
                 }
         }
         .task { store.startPolling() }
+        .task { await scope.resolveIdentity() }
         .onDisappear { store.stopPolling() }
         .onChange(of: scenePhase) { _, phase in
             switch phase {
@@ -52,9 +83,33 @@ struct InboxView: View {
     }
 
     @ViewBuilder
+    private var scopedContent: some View {
+        Group {
+            switch tab {
+            case .active:
+                VStack(spacing: 0) {
+                    if !store.filter.isEmpty {
+                        SessionFilterChips(store: store)
+                    }
+                    content
+                }
+            case .archived: ArchivedSessionsView(store: store, query: query)
+            }
+        }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            Picker("Tab", selection: $tab) {
+                ForEach(InboxTab.allCases) { Text($0.rawValue) }
+            }
+            .pickerStyle(.segmented)
+            .padding(.horizontal)
+            .padding(.bottom, 8)
+        }
+    }
+
+    @ViewBuilder
     private var content: some View {
-        let groups = store.filtered(by: query)
-        if store.sessions.isEmpty && store.isLoading {
+        let groups = scope.filter(store.filtered(by: query))
+        if (store.sessions.isEmpty && store.isLoading) || (scope.isIdentityPending && scope.scope == .mine) {
             ProgressView("Loading sessions…")
         } else if let error = store.error, store.sessions.isEmpty {
             ContentUnavailableView {
@@ -65,10 +120,12 @@ struct InboxView: View {
                 Button("Retry") { Task { await store.refresh() } }
             }
         } else if groups.isEmpty {
+            let unfiltered = query.isEmpty && store.filter.isEmpty
+            let mode = scope.effectiveScope
             ContentUnavailableView(
-                query.isEmpty ? "No sessions yet" : "No matches",
-                systemImage: query.isEmpty ? "tray" : "magnifyingglass",
-                description: Text(query.isEmpty ? "Tap + to give Devin something to do." : "Try a different search.")
+                unfiltered ? mode.emptyTitle : "No matches",
+                systemImage: unfiltered ? mode.systemImage : "magnifyingglass",
+                description: Text(unfiltered ? mode.emptyDescription : "Try a different search or clear a filter.")
             )
         } else {
             let prefetchIDs = Set(groups.flatMap(\.sessions).suffix(Self.prefetchWindow).map(\.id))

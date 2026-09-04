@@ -51,6 +51,9 @@ Rules of thumb that the existing code follows:
 - **Cursor pagination.** `SessionStore` loads `first=50` pages and follows `end_cursor` via
   `SessionQuery.after` (`loadMore()`, prefetched when the last 10 inbox rows appear). Polling
   re-fetches only page 1 and upserts by `session_id` (`[Session].merging`) so deeper pages stay put.
+- **Member names are in-memory only.** `MemberDirectory` (DevinKit actor) fetches the whole
+  members list once per launch and caches `user_id → OrgMember`; a 403 is sticky and the inbox
+  simply omits owner chips (shown in Everyone scope only). Nothing about members is persisted.
 - **Simulator without a PAT.** Launch with `-MockAPI` (DEBUG only) to run against an in-process
   fake API (`DevinMobile/Support/MockAPI.swift`, 130 sessions) backed by `InMemoryCredentialStore`.
 - **Credentials only in Keychain** (`ai.devin.mobile` / `credentials`). Nothing is stored until
@@ -148,7 +151,7 @@ truth; the summary below was taken from it).
       history via `automation_ids`/`schedule_id` session filters).
 - [ ] Usage — `…/metrics/usage`, `…/consumption/daily` for an ACU burn chart (Swift Charts).
 - [ ] Code scans — `…/code-scans/*` list + findings; remediate = starts a session.
-- [ ] Members — `/v3beta1/…/members/users` to resolve `user_id` → name in the inbox.
+- [x] Members — `/v3beta1/…/members/users` to resolve `user_id` → name in the inbox.
 
 Permissions: PATs act as the user. Service-user keys are RBAC-gated (`ViewOrgSessions`,
 `ManageOrgSessions`, `UseDevinSessions`, `ManageOrgPlaybooks`, …). Map 403 → hide the feature,

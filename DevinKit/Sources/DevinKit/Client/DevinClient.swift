@@ -112,6 +112,26 @@ public struct DevinClient: Sendable {
         return try await request(.get, "/v3/organizations/\(org)/playbooks", query: items)
     }
 
+    // MARK: Members
+
+    public func members(org: String, after: String? = nil, first: Int = 200) async throws -> Page<OrgMember> {
+        var items = [URLQueryItem(name: "first", value: String(first))]
+        if let after { items.append(URLQueryItem(name: "after", value: after)) }
+        return try await request(.get, "/v3beta1/organizations/\(org)/members/users", query: items)
+    }
+
+    /// Follows the cursor until every direct member has been fetched.
+    public func allMembers(org: String) async throws -> [OrgMember] {
+        var all: [OrgMember] = []
+        var cursor: String? = nil
+        repeat {
+            let page = try await members(org: org, after: cursor)
+            all += page.items
+            cursor = page.hasNextPage ? page.endCursor : nil
+        } while cursor != nil
+        return all
+    }
+
     // MARK: - Plumbing
 
     enum Method: String { case get = "GET", post = "POST", put = "PUT", delete = "DELETE" }

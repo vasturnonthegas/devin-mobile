@@ -50,10 +50,16 @@ enum MockAPI {
                 updatedAt: now.addingTimeInterval(-Double(i) * 3_600),
                 devinMode: shape.2,
                 origin: .api,
-                userID: "user-mock"
+                userID: members[i % members.count].userID
             )
         }
     }()
+
+    static let members: [OrgMember] = [
+        OrgMember(userID: "user-mock", email: "mock@example.com", name: "Mock User"),
+        OrgMember(userID: "user-mock-2", email: "priya@example.com", name: "Priya Natarajan"),
+        OrgMember(userID: "user-mock-3", email: "sam.rivera@example.com", name: nil),
+    ]
 }
 
 final class MockAPIProtocol: URLProtocol, @unchecked Sendable {
@@ -88,6 +94,9 @@ final class MockAPIProtocol: URLProtocol, @unchecked Sendable {
         let parts = url.pathComponents.filter { $0 != "/" }
         if method == "GET", parts == ["v3", "self"] {
             return (200, Data(#"{"principal_type":"user","user_id":"user-mock","user_name":"Mock User","org_id":"org-mock"}"#.utf8))
+        }
+        if method == "GET", parts.count == 5, parts[0] == "v3beta1", parts[3] == "members", parts[4] == "users" {
+            return encode(Page(items: MockAPI.members))
         }
         // Everything else is /v3/organizations/{org}/sessions[/{id}[/{sub}]]
         guard parts.count >= 4, parts[0] == "v3", parts[1] == "organizations", parts[3] == "sessions" else { return notFound() }

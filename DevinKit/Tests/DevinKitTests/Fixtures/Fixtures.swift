@@ -259,6 +259,34 @@ enum Fixtures {
     {"status": 401, "title": "Unauthorized", "detail": "Invalid API key", "type": "about:blank"}
     """
 
+    static let membersPage1 = """
+    {
+      "items": [
+        {"user_id": "user-1", "email": "taj@example.com", "name": "Taj Vasudeva",
+         "role_assignments": [{"role": {"role_name": "Admin", "role_id": "role-admin", "role_type": "org"}, "org_id": "org-xyz"}]},
+        {"user_id": "user-2", "email": "sam@example.com", "name": null,
+         "role_assignments": [{"role": {"role_name": "Viewer", "role_id": "role-viewer", "role_type": "galactic"}, "org_id": null}]}
+      ],
+      "end_cursor": "m1",
+      "has_next_page": true,
+      "total": 3
+    }
+    """
+
+    static let membersPage2 = """
+    {
+      "items": [
+        {"user_id": "user-3", "email": null, "name": "  ", "role_assignments": []}
+      ],
+      "end_cursor": null,
+      "has_next_page": false
+    }
+    """
+
+    static let problem403 = """
+    {"status": 403, "title": "Forbidden", "detail": "Missing permission: ViewOrgMembers", "type": "about:blank"}
+    """
+
     static let playbooksPage = """
     {
       "items": [

@@ -11,11 +11,13 @@ struct InboxView: View {
     @State private var tab: InboxTab = .active
     @State private var showNewSession = false
     @State private var showSettings = false
+    @State private var members: MemberLookup
     @State private var showFilters = false
 
     init(store: SessionStore) {
         _store = Bindable(store)
         _scope = State(initialValue: InboxScopeModel(client: store.client, orgID: store.orgID))
+        _members = State(initialValue: MemberLookup(client: store.client, orgID: store.orgID))
     }
 
     var body: some View {
@@ -72,6 +74,7 @@ struct InboxView: View {
         }
         .task { store.startPolling() }
         .task { await scope.resolveIdentity() }
+        .task { await members.load() }
         .onDisappear { store.stopPolling() }
         .onChange(of: scenePhase) { _, phase in
             switch phase {
@@ -106,6 +109,9 @@ struct InboxView: View {
         }
     }
 
+    /// Owner chips only add information when rows can belong to other people.
+    private var showsOwners: Bool { scope.effectiveScope == .everyone }
+
     @ViewBuilder
     private var content: some View {
         let groups = scope.filter(store.filtered(by: query))
@@ -134,7 +140,7 @@ struct InboxView: View {
                     Section {
                         ForEach(group.sessions) { session in
                             NavigationLink(value: session) {
-                                SessionRow(session: session)
+                                SessionRow(session: session, owner: showsOwners ? members.owner(of: session) : nil)
                             }
                             .onAppear {
                                 if prefetchIDs.contains(session.id) {
@@ -186,6 +192,7 @@ struct InboxView: View {
 
 struct SessionRow: View {
     let session: Session
+    var owner: OrgMember? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -226,11 +233,19 @@ struct SessionRow: View {
                 Spacer()
             }
             SessionMetadataLine(session: session, font: .caption2)
-            if !session.tags.isEmpty {
-                Text(session.tags.map { "#\($0)" }.joined(separator: "  "))
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-                    .lineLimit(1)
+            if !session.tags.isEmpty || owner != nil {
+                HStack(spacing: 8) {
+                    if !session.tags.isEmpty {
+                        Text(session.tags.map { "#\($0)" }.joined(separator: "  "))
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                            .lineLimit(1)
+                    }
+                    Spacer(minLength: 0)
+                    if let owner {
+                        MemberChip(member: owner)
+                    }
+                }
             }
         }
         .padding(.vertical, 2)

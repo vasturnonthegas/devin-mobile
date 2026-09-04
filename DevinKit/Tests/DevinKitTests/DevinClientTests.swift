@@ -326,6 +326,40 @@ final class DevinClientTests: XCTestCase {
         XCTAssertEqual(page.items.first?.macro, "!fixci")
     }
 
+    func testMembersBuildsQueryAndDecodes() async throws {
+        transport.stub(json: Fixtures.membersPage1)
+        let page = try await client.members(org: "org-xyz", after: "m0", first: 50)
+
+        let url = transport.lastRequest.url!
+        XCTAssertEqual(transport.lastRequest.httpMethod, "GET")
+        XCTAssertEqual(url.path, "/v3beta1/organizations/org-xyz/members/users")
+        let items = URLComponents(url: url, resolvingAgainstBaseURL: false)!.queryItems!
+        XCTAssertTrue(items.contains(URLQueryItem(name: "first", value: "50")))
+        XCTAssertTrue(items.contains(URLQueryItem(name: "after", value: "m0")))
+        XCTAssertEqual(transport.lastRequest.value(forHTTPHeaderField: "Authorization"), "Bearer cog_test")
+
+        XCTAssertEqual(page.items.map(\.userID), ["user-1", "user-2"])
+        XCTAssertTrue(page.hasNextPage)
+        XCTAssertEqual(page.endCursor, "m1")
+        XCTAssertEqual(page.items[0].displayName, "Taj Vasudeva")
+        XCTAssertEqual(page.items[0].initials, "TV")
+        XCTAssertEqual(page.items[1].displayName, "sam@example.com", "falls back to email when name is null")
+        XCTAssertEqual(page.items[1].initials, "S")
+    }
+
+    func testAllMembersFollowsCursor() async throws {
+        transport.stub(json: Fixtures.membersPage1)
+        transport.stub(json: Fixtures.membersPage2)
+
+        let members = try await client.allMembers(org: "org-xyz")
+
+        XCTAssertEqual(members.map(\.userID), ["user-1", "user-2", "user-3"])
+        XCTAssertEqual(members[2].displayName, "user-3", "blank name and null email fall back to the ID")
+        XCTAssertEqual(transport.requests.count, 2)
+        let second = URLComponents(url: transport.requests[1].url!, resolvingAgainstBaseURL: false)!
+        XCTAssertTrue(second.queryItems!.contains(URLQueryItem(name: "after", value: "m1")))
+    }
+
     func testUnauthorizedMapsToTypedError() async {
         transport.stub(401, json: Fixtures.problem401)
         do {

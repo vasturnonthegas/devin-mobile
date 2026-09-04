@@ -230,6 +230,14 @@ enum Fixtures {
     }
     """
 
+    static let sessionTags = """
+    {"tags": ["bug", "auth", "Mobile Sprint 1"], "future_field": "ignored"}
+    """
+
+    static let problem422Tags = """
+    {"status": 422, "title": "Unprocessable Content", "detail": "Tag 'nope' is not in the organization's allowed tags", "type": "about:blank"}
+    """
+
     static let selfPAT = """
     {"principal_type": "user", "user_id": "user-1", "user_name": "Taj", "org_id": "org-xyz"}
     """

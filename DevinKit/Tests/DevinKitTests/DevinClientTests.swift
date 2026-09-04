@@ -226,6 +226,59 @@ final class DevinClientTests: XCTestCase {
         XCTAssertEqual(transport.lastRequest.url?.query, "archive=true")
     }
 
+    func testSessionTagsGet() async throws {
+        transport.stub(json: Fixtures.sessionTags)
+        let tags = try await client.sessionTags(org: "org-xyz", id: "devin-abc123")
+        XCTAssertEqual(transport.lastRequest.httpMethod, "GET")
+        XCTAssertEqual(transport.lastRequest.url?.path, "/v3/organizations/org-xyz/sessions/devin-abc123/tags")
+        XCTAssertNil(transport.lastRequest.url?.query)
+        XCTAssertNil(transport.lastRequest.httpBody)
+        XCTAssertEqual(transport.lastRequest.value(forHTTPHeaderField: "Authorization"), "Bearer cog_test")
+        XCTAssertEqual(tags, ["bug", "auth", "Mobile Sprint 1"])
+    }
+
+    func testReplaceTagsPutsFullSet() async throws {
+        transport.stub(json: Fixtures.sessionTags)
+        let tags = try await client.replaceTags(["bug", "auth", "Mobile Sprint 1"], org: "org-xyz", id: "devin-abc123")
+        XCTAssertEqual(transport.lastRequest.httpMethod, "PUT")
+        XCTAssertEqual(transport.lastRequest.url?.path, "/v3/organizations/org-xyz/sessions/devin-abc123/tags")
+        XCTAssertEqual(transport.lastRequest.value(forHTTPHeaderField: "Content-Type"), "application/json")
+        XCTAssertEqual(transport.lastRequest.bodyJSON["tags"] as? [String], ["bug", "auth", "Mobile Sprint 1"])
+        XCTAssertEqual(transport.lastRequest.bodyJSON.count, 1)
+        XCTAssertEqual(tags, ["bug", "auth", "Mobile Sprint 1"])
+    }
+
+    func testAppendTagsPostsOnlyNewTags() async throws {
+        transport.stub(json: Fixtures.sessionTags)
+        let tags = try await client.appendTags(["Mobile Sprint 1"], org: "org-xyz", id: "devin-abc123")
+        XCTAssertEqual(transport.lastRequest.httpMethod, "POST")
+        XCTAssertEqual(transport.lastRequest.url?.path, "/v3/organizations/org-xyz/sessions/devin-abc123/tags")
+        XCTAssertEqual(transport.lastRequest.bodyJSON["tags"] as? [String], ["Mobile Sprint 1"])
+        XCTAssertEqual(tags.count, 3, "server returns the merged set, not just the appended tags")
+    }
+
+    func testReplaceTagsRejectedIsTypedError() async {
+        transport.stub(422, json: Fixtures.problem422Tags)
+        do {
+            _ = try await client.replaceTags(["nope"], org: "org-xyz", id: "devin-abc123")
+            XCTFail("expected error")
+        } catch let error as DevinError {
+            guard case .http(let status, let problem) = error else { return XCTFail("expected http error, got \(error)") }
+            XCTAssertEqual(status, 422)
+            XCTAssertEqual(problem?.detail, "Tag 'nope' is not in the organization's allowed tags")
+        } catch {
+            XCTFail("wrong error type: \(error)")
+        }
+    }
+
+    func testSessionTagsNormalize() {
+        XCTAssertEqual(SessionTags.normalize("  #mobile "), "mobile")
+        XCTAssertEqual(SessionTags.normalize("##Sprint 1"), "Sprint 1")
+        XCTAssertNil(SessionTags.normalize("  # "))
+        XCTAssertNil(SessionTags.normalize(""))
+        XCTAssertEqual(SessionTags.maxCount, 50)
+    }
+
     func testMeDecodesOrg() async throws {
         transport.stub(json: Fixtures.selfPAT)
         let me = try await client.me()

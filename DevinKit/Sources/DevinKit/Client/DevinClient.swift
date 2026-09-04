@@ -114,7 +114,7 @@ public struct DevinClient: Sendable {
 
     // MARK: - Plumbing
 
-    enum Method: String { case get = "GET", post = "POST", delete = "DELETE" }
+    enum Method: String { case get = "GET", post = "POST", put = "PUT", delete = "DELETE" }
 
     func makeRequest(_ method: Method, _ path: String, query: [URLQueryItem] = [], bodyData: Data? = nil) -> URLRequest {
         var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false)!
@@ -132,12 +132,12 @@ public struct DevinClient: Sendable {
         return request
     }
 
-    private func request<Response: Decodable>(_ method: Method, _ path: String, query: [URLQueryItem] = []) async throws -> Response {
+    func request<Response: Decodable>(_ method: Method, _ path: String, query: [URLQueryItem] = []) async throws -> Response {
         let data = try await perform(makeRequest(method, path, query: query))
         return try decode(data)
     }
 
-    private func request<Body: Encodable, Response: Decodable>(_ method: Method, _ path: String, body: Body) async throws -> Response {
+    func request<Body: Encodable, Response: Decodable>(_ method: Method, _ path: String, body: Body) async throws -> Response {
         let data = try await perform(makeRequest(method, path, bodyData: try encoder.encode(body)))
         return try decode(data)
     }

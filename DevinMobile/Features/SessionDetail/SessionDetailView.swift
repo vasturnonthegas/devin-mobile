@@ -117,6 +117,10 @@ struct SessionDetailView: View {
             if session.hasChildren {
                 ChildSessionsSection(store: model.store, parent: session)
             }
+
+            if let output = session.structuredOutput {
+                StructuredOutputSection(output: output)
+            }
         }
         .padding(12)
         .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 14))
@@ -124,18 +128,34 @@ struct SessionDetailView: View {
 
     // MARK: Composer
 
+    @ViewBuilder
     private func composer(for session: Session) -> some View {
+        switch session.messaging {
+        case .unavailable(let reason):
+            VStack(spacing: 0) {
+                Divider()
+                ComposerUnavailableFooter(reason: reason) { openURL(session.url) }
+            }
+        case .active, .wakesSession:
+            composerField(for: session)
+        }
+    }
+
+    private func composerField(for session: Session) -> some View {
         VStack(spacing: 0) {
             Divider()
+            if session.messaging == .wakesSession {
+                ComposerWakeHint().background(.bar)
+            }
             if !model.attachments.items.isEmpty || model.attachments.error != nil {
                 ComposerAttachmentsBar(attachments: model.attachments)
             }
             HStack(alignment: .bottom, spacing: 8) {
                 AttachmentPickerButton(attachments: model.attachments)
-                    .disabled(!session.isActive)
+                    .disabled(!session.messaging.acceptsMessages)
 
                 TextField(
-                    session.isActive ? "Message Devin…" : "Session is asleep — messages resume it",
+                    session.messaging.composerPlaceholder,
                     text: $model.draft,
                     axis: .vertical
                 )

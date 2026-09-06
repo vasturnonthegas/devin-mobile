@@ -97,6 +97,35 @@ enum Fixtures {
     }
     """
 
+    /// Finished session carrying a `structured_output` object with every JSON type nested inside.
+    static let sessionStructuredOutput = """
+    {
+      "session_id": "devin-out001",
+      "org_id": "org-xyz",
+      "status": "exit",
+      "status_detail": "finished",
+      "title": "Triage flaky tests",
+      "url": "https://app.devin.ai/sessions/out001",
+      "tags": [],
+      "pull_requests": [],
+      "acus_consumed": 4,
+      "created_at": 1756800000,
+      "updated_at": 1756809000,
+      "structured_output": {
+        "summary": "3 flaky tests found",
+        "confidence": 0.85,
+        "total": 3,
+        "has_blockers": false,
+        "owner": null,
+        "issues": [
+          {"file": "Tests/LoginTests.swift", "line": 42, "reasons": ["timing", "shared state"]},
+          {"file": "Tests/Inbox\\"Tests\\".swift", "line": 7, "reasons": []}
+        ],
+        "meta": {}
+      }
+    }
+    """
+
     static let sessionParent = """
     {
       "session_id": "devin-parent",
@@ -296,6 +325,10 @@ enum Fixtures {
 
     static let problem413Attachment = """
     {"status": 413, "title": "Payload Too Large", "detail": "Attachments must be 25 MB or smaller", "type": "about:blank"}
+    """
+
+    static let problem409SessionEnded = """
+    {"status": 409, "title": "Conflict", "detail": "Session devin-jkl012 has exited and cannot be resumed", "type": "about:blank"}
     """
 
     static let problem422Tags = """

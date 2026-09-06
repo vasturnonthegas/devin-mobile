@@ -50,7 +50,8 @@ enum MockAPI {
                 updatedAt: now.addingTimeInterval(-Double(i) * 3_600),
                 devinMode: shape.2,
                 origin: .api,
-                userID: members[i % members.count].userID
+                userID: members[i % members.count].userID,
+                structuredOutput: shape.1 == .finished ? structuredOutput(index: i) : nil
             )
         }
     }()
@@ -65,6 +66,49 @@ enum MockAPI {
         return states.enumerated().map { offset, state in
             PullRequest(url: URL(string: "https://github.com/acme/app/pull/\(100 + i + offset)")!, state: state)
         }
+    }
+
+    private static func structuredOutput(index: Int) -> JSONValue {
+        .object([
+            "summary": .string("Found \(index % 5) flaky tests in CI"),
+            "confidence": .number(0.85),
+            "tests_run": .number(Double(120 + index)),
+            "has_blockers": .bool(index % 2 == 0),
+            "owner": .null,
+            "issues": .array([
+                .object(["file": .string("Tests/LoginTests.swift"), "line": .number(42), "reasons": .array([.string("timing"), .string("shared state")])]),
+                .object(["file": .string("Tests/InboxTests.swift"), "line": .number(7), "reasons": .array([])]),
+            ]),
+            "meta": .object([:]),
+        ])
+    }
+
+    /// IDs woken by `POST …/messages`; mirrors the real API, which resumes a suspended session on message.
+    private static let woken = LockedSet()
+
+    static func wake(id: String) { woken.insert(id) }
+
+    static func session(id: String) -> Session? {
+        sessions.first(where: { $0.sessionID == id }).map(current)
+    }
+
+    /// The catalogue is immutable; `current` overlays the only state the mock tracks (suspended → resuming).
+    static func current(_ session: Session) -> Session {
+        guard session.status == .suspended, woken.contains(session.sessionID) else { return session }
+        return Session(
+            sessionID: session.sessionID, orgID: session.orgID, status: .resuming, statusDetail: nil,
+            title: session.title, url: session.url, tags: session.tags, pullRequests: session.pullRequests,
+            acusConsumed: session.acusConsumed, createdAt: session.createdAt, updatedAt: .now,
+            devinMode: session.devinMode, origin: session.origin, userID: session.userID,
+            structuredOutput: session.structuredOutput
+        )
+    }
+
+    private final class LockedSet: @unchecked Sendable {
+        private let lock = NSLock()
+        private var ids: Set<String> = []
+        func insert(_ id: String) { lock.withLock { _ = ids.insert(id) } }
+        func contains(_ id: String) -> Bool { lock.withLock { ids.contains(id) } }
     }
 
     static let members: [OrgMember] = [
@@ -189,7 +233,7 @@ final class MockAPIProtocol: URLProtocol, @unchecked Sendable {
             let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
             let first = items.first { $0.name == "first" }?.value.flatMap(Int.init) ?? 100
             let offset = items.first { $0.name == "after" }?.value.flatMap(Int.init) ?? 0
-            let slice = Array(MockAPI.sessions.dropFirst(offset).prefix(first))
+            let slice = MockAPI.sessions.dropFirst(offset).prefix(first).map(MockAPI.current)
             let end = offset + slice.count
             let page = Page(items: slice,
                             endCursor: end < MockAPI.sessions.count ? String(end) : nil,
@@ -197,12 +241,20 @@ final class MockAPIProtocol: URLProtocol, @unchecked Sendable {
                             total: MockAPI.sessions.count)
             return encode(page)
 
-        case ("GET", let id?, nil), ("DELETE", let id?, nil), ("POST", let id?, "archive"), ("POST", let id?, "messages"):
-            guard let session = MockAPI.sessions.first(where: { $0.sessionID == id }) else { return notFound() }
+        case ("GET", let id?, nil), ("DELETE", let id?, nil), ("POST", let id?, "archive"):
+            guard let session = MockAPI.session(id: id) else { return notFound() }
             return encode(session)
 
         case ("GET", let id?, "messages"):
             return encode(Page(items: MockAPI.messages(for: id)))
+
+        case ("POST", let id?, "messages"):
+            guard let session = MockAPI.session(id: id) else { return notFound() }
+            guard session.messaging.acceptsMessages else {
+                return (409, Data(#"{"status":409,"title":"Conflict","detail":"Session has exited and cannot be resumed"}"#.utf8))
+            }
+            MockAPI.wake(id: id)
+            return encode(MockAPI.current(session))
 
         case ("GET", let id?, "attachments"):
             return (200, MockAPI.attachmentsJSON(for: id))

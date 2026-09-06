@@ -120,8 +120,8 @@ final class MockAPIProtocol: URLProtocol, @unchecked Sendable {
             guard let session = MockAPI.sessions.first(where: { $0.sessionID == id }) else { return notFound() }
             return encode(session)
 
-        case ("GET", _?, "messages"):
-            return encode(Page<SessionMessage>(items: []))
+        case ("GET", let id?, "messages"):
+            return encode(Page(items: MockAPI.messages(for: id)))
 
         case ("GET", _?, "attachments"):
             return encode(Page<SessionAttachment>(items: []))

@@ -16,3 +16,5 @@ DevinIntents/Info.plist
 DevinIntents/DevinIntents.entitlements
 DevinShareExtension/Info.plist
 DevinShareExtension/DevinShareExtension.entitlements
+DevinMobile/Info.plist
+DevinMobile/DevinMobile.entitlements

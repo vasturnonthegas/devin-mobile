@@ -25,7 +25,6 @@ struct SessionMetadataLine: View {
             .labelStyle(.titleAndIcon)
             .font(font)
             .foregroundStyle(.secondary)
-            .lineLimit(1)
             .accessibilityElement(children: .combine)
             .accessibilityLabel(session.metadataSummary.joined(separator: ", "))
         }
@@ -34,7 +33,7 @@ struct SessionMetadataLine: View {
     @ViewBuilder
     private func separator(after hasPrevious: Bool) -> some View {
         if hasPrevious {
-            Text("·").foregroundStyle(.tertiary)
+            Text("·")
         }
     }
 

@@ -6,12 +6,14 @@ struct MemberChip: View {
     let member: OrgMember
     var showsName = true
 
+    @ScaledMetric(relativeTo: .caption) private var avatarSize: CGFloat = 18
+
     var body: some View {
         HStack(spacing: 4) {
             Text(member.initials)
-                .font(.system(size: 9, weight: .semibold, design: .rounded))
+                .font(.system(size: avatarSize / 2, weight: .semibold, design: .rounded))
                 .foregroundStyle(.white)
-                .frame(width: 18, height: 18)
+                .frame(width: avatarSize, height: avatarSize)
                 .background(color, in: Circle())
             if showsName {
                 Text(member.displayName)

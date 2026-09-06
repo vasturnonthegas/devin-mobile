@@ -336,7 +336,11 @@ don't crash. `DevinError.forbidden` already exists.
 - [ ] **Push via a relay** (optional, needs a server): tiny service that polls the API per user and
       sends APNs. Only worth it if background refresh proves too laggy.
 - [ ] **iPad / macOS (Catalyst or Designed-for-iPad)**: `NavigationSplitView` for inbox + detail.
-- [ ] Haptics on state changes, Dynamic Type audit, VoiceOver labels on `StatusBadge`.
+- [x] **Haptics + accessibility**: `bucketChangeHaptics(for:)` on the inbox `NavigationStack` root
+      taps once per poll that moves a session between buckets (`.error` for failed, `.warning` for
+      needs-you, `.success` for finished). `StatusBadge` is one VoiceOver element ("Needs you: Waiting
+      for you"), inbox rows are one stop each, and `DevinMobileUITests` runs Accessibility Inspector's
+      audit (`performAccessibilityAudit`) over the inbox and detail at default size and XXXL.
 
 ## 5. Conventions for Devin sessions working here
 
@@ -357,6 +361,12 @@ don't crash. `DevinError.forbidden` already exists.
 - Simulator builds that must exercise the App Group (widget, shared Keychain) need entitlements, so
   build them *without* `CODE_SIGNING_ALLOWED=NO` (ad-hoc signing needs no team). CI's unsigned build
   only proves the targets compile.
+- Accessibility: keep `DevinMobileUITests/AccessibilityAuditTests` green on a booted simulator
+  (`xcodebuild test -scheme DevinMobile -only-testing:DevinMobileUITests -destination 'platform=iOS
+  Simulator,name=iPhone 17 Pro'`; CI is build-only, so this is a local gate). New status-like colour
+  as *text* on a plain background needs ~4.5:1 — system orange does not pass, use `Color.needsYou`
+  (`Color.onNeedsYou` for text on top of it). Prefer `@ScaledMetric` over fixed sizes, and avoid
+  `.tertiary` for text.
 - Don't add third-party packages without asking; the app is intentionally dependency-free.
 - Never log tokens. `DevinClient` builds the `Authorization` header in one place — keep it that way.
 - If the OpenAPI spec disagrees with this doc, the spec wins. Re-fetch it at session start.

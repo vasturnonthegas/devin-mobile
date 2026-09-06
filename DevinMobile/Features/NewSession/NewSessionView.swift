@@ -8,9 +8,8 @@ struct NewSessionView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var prompt: String
-    @State private var repoInput = ""
     @State private var selectedRepos: [String] = []
-    @State private var recentRepos = RecentRepos.load()
+    @State private var showRepoPicker = false
     @State private var mode: DevinMode = .normal
     @State private var playbooks: [Playbook] = []
     @State private var playbookID: String?
@@ -57,29 +56,10 @@ struct NewSessionView: View {
                             }
                         }
                     }
-                    HStack {
-                        TextField("github.com/owner/repo", text: $repoInput)
-                            .autocorrectionDisabled()
-                            .textInputAutocapitalization(.never)
-                            .keyboardType(.URL)
-                            .onSubmit(addRepo)
-                        Button("Add", action: addRepo)
-                            .disabled(repoInput.trimmingCharacters(in: .whitespaces).isEmpty)
+                    Button { showRepoPicker = true } label: {
+                        Label(selectedRepos.isEmpty ? "Choose repositories" : "Add more", systemImage: "plus.circle")
                     }
-                    let suggestions = recentRepos.filter { !selectedRepos.contains($0) }
-                    if !suggestions.isEmpty {
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack {
-                                ForEach(suggestions, id: \.self) { repo in
-                                    Button(repo.split(separator: "/").suffix(2).joined(separator: "/")) {
-                                        selectedRepos.append(repo)
-                                    }
-                                    .buttonStyle(.bordered)
-                                    .font(.caption)
-                                }
-                            }
-                        }
-                    }
+                    .accessibilityIdentifier("newSession.chooseRepos")
                 } header: {
                     Text("Repositories")
                 } footer: {
@@ -145,14 +125,10 @@ struct NewSessionView: View {
             }
             .onAppear { promptFocused = true }
             .interactiveDismissDisabled(!prompt.isEmpty)
+            .sheet(isPresented: $showRepoPicker) {
+                RepoPickerView(store: store, selection: $selectedRepos)
+            }
         }
-    }
-
-    private func addRepo() {
-        let repo = RecentRepos.normalize(repoInput)
-        guard !repo.isEmpty else { return }
-        if !selectedRepos.contains(repo) { selectedRepos.append(repo) }
-        repoInput = ""
     }
 
     private func loadPlaybooks() async {
@@ -162,7 +138,6 @@ struct NewSessionView: View {
 
     private func create() {
         guard canCreate else { return }
-        if !repoInput.trimmingCharacters(in: .whitespaces).isEmpty { addRepo() }
         isCreating = true
         errorMessage = nil
 

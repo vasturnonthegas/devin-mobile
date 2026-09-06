@@ -115,6 +115,23 @@ final class DevinClientTests: XCTestCase {
         XCTAssertEqual(odd.displayTitle, "devin-ghi789")
     }
 
+    func testPullRequestStatesDecodeAndUnknownStaysNeutral() async throws {
+        transport.stub(json: Fixtures.sessionWithPullRequests)
+        let session = try await client.session(org: "org-xyz", id: "devin-prs001")
+
+        XCTAssertEqual(transport.lastRequest.url?.path, "/v3/organizations/org-xyz/sessions/devin-prs001")
+        XCTAssertEqual(transport.lastRequest.httpMethod, "GET")
+
+        let prs = session.pullRequests
+        XCTAssertEqual(prs.map(\.stateKind), [.open, .draft, .merged, .closed, .unknown("locked_by_bot"), .unknown(nil)])
+        XCTAssertEqual(prs.map(\.stateKind.displayName), ["Open", "Draft", "Merged", "Closed", "Locked by bot", "Unknown"])
+        XCTAssertEqual(prs.map(\.stateKind.isResolved), [false, false, true, true, false, false])
+        XCTAssertEqual(prs.map(\.shortLabel), [
+            "acme/api#42", "acme/api#43", "acme/api#44", "acme/api#45", "acme/web#9", "example.com/review/77",
+        ])
+        XCTAssertEqual(prs[2].state, "MERGED", "raw value is preserved for logging/debugging")
+    }
+
     func testSecondaryMetadataDecodesNullable() async throws {
         transport.stub(json: Fixtures.sessionsPage)
         let page = try await client.sessions(org: "org-xyz")

@@ -44,7 +44,7 @@ enum MockAPI {
                 title: "\(titles[i % titles.count]) #\(i)",
                 url: URL(string: "https://app.devin.ai/sessions/\(id)")!,
                 tags: i % 3 == 0 ? ["mobile", "sprint-1"] : [],
-                pullRequests: i % 4 == 0 ? [PullRequest(url: URL(string: "https://github.com/acme/app/pull/\(100 + i)")!, state: "open")] : [],
+                pullRequests: pullRequests(forSessionIndex: i),
                 acusConsumed: Double(i % 7) * 0.75,
                 createdAt: now.addingTimeInterval(-Double(i) * 3_600 - 600),
                 updatedAt: now.addingTimeInterval(-Double(i) * 3_600),
@@ -54,6 +54,18 @@ enum MockAPI {
             )
         }
     }()
+
+    /// Every fourth session has a PR, cycling through these states; the first session gets one PR
+    /// per state so a single screen shows every badge plus the neutral fallback.
+    static let pullRequestStates: [String?] = ["open", "draft", "merged", "closed", "locked_by_bot", nil]
+
+    static func pullRequests(forSessionIndex i: Int) -> [PullRequest] {
+        guard i % 4 == 0 else { return [] }
+        let states = i == 0 ? pullRequestStates : [pullRequestStates[(i / 4) % pullRequestStates.count]]
+        return states.enumerated().map { offset, state in
+            PullRequest(url: URL(string: "https://github.com/acme/app/pull/\(100 + i + offset)")!, state: state)
+        }
+    }
 
     static let members: [OrgMember] = [
         OrgMember(userID: "user-mock", email: "mock@example.com", name: "Mock User"),

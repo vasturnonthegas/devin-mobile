@@ -34,7 +34,7 @@ DevinKit (no UI, platform-agnostic, unit-tested with MockTransport)
             KnowledgeNote/KnowledgeFolder(Tree), OrgSecret (metadata only)
   Storage/  CredentialStore protocol; KeychainCredentialStore (iOS), InMemoryCredentialStore (tests/previews)
   Sharing/  AppGroup (ids shared with extensions), DeepLink (devinmobile:// URLs), SessionSnapshot (last-known buckets,
-            + `changes(since:)` bucket diff),
+            + `changes(since:)` bucket diff, `spokenSummary` for Siri, `entries(matching:)` title search),
             WidgetContent (signed-out / awaiting-first-load / sessions, from Keychain + snapshot)
 
 DevinMobile (SwiftUI, iOS 17, @Observable + @MainActor, no third-party deps)
@@ -49,6 +49,10 @@ DevinMobile (SwiftUI, iOS 17, @Observable + @MainActor, no third-party deps)
 
 DevinWidget (WidgetKit extension, `ai.devin.mobile.widget`, same App Group; embedded in the app)
   NeedsYouWidget (small + medium): "N sessions need you" + top 3 rows → devinmobile://session/<id>
+
+DevinIntents (App Intents extension, `ai.devin.mobile.intents`, same App Group; embedded under Extensions/)
+  StartDevinSessionIntent(prompt, repo?) · ReplyToDevinIntent(session, message) · WhatIsDevinWaitingOnIntent
+  SessionEntity (+ SessionEntityQuery over the snapshot), DevinShortcuts (Siri phrases), SignedInDevin (Keychain → DevinClient)
 ```
 
 Rules of thumb that the existing code follows:
@@ -138,6 +142,26 @@ Rules of thumb that the existing code follows:
   `e -l objc -- (void)[[BGTaskScheduler sharedScheduler] _simulateLaunchForTaskWithIdentifier:@"ai.devin.mobile.refresh"]`,
   or launch with `-MockAPI -SimulateBackgroundRefresh` (DEBUG), which flips three mock sessions
   4 s after launch and runs one pass. `BGTaskScheduler.submit` fails silently in the Simulator.
+- **Siri / Shortcuts run out of process.** `DevinIntents` is an ExtensionKit App Intents extension
+  (`EXExtensionPointIdentifier: com.apple.appintents-extension`), so intents and the
+  `AppShortcutsProvider` (allowed in an extension since iOS 17) run without launching the app.
+  `SignedInDevin.current()` reads `AppGroup.credentialStore` and builds a `DevinClient` per run;
+  every failure becomes a `DevinIntentError` (`CustomLocalizedStringResourceConvertible`) so Siri
+  speaks it and Shortcuts shows it as an alert. `SessionEntity` is built from `SessionSnapshot.Entry`:
+  the picker (`suggestedEntities` / `entities(matching:)`) answers from the saved snapshot when it is
+  < 10 min old and otherwise refreshes page 1 (falling back to the stale snapshot offline);
+  `entities(for:)` fetches ids the snapshot no longer has. `WhatIsDevinWaitingOnIntent` polls page 1,
+  saves the snapshot (so the widget / background diff see what Siri just said) and speaks
+  `SessionSnapshot.spokenSummary`; if the API is unreachable it reads the saved snapshot with its
+  age. `-MockAPI` is in-process, so the extension cannot see mock data — in the Simulator it reports
+  "not signed in" unless a real PAT is in the shared Keychain.
+  **Simulator limitation:** the Devin tiles show up in Shortcuts, but tapping one fails with "Unable
+  to run App Shortcut" because `linkd` refuses the ad-hoc-signed extension's phrase fetch
+  (`Unable to get teamId from ai.devin.mobile.intents … Rejecting invalid client due to
+  requiresValidBundle`, then `Couldn't find AppShortcutsProvider`). Neither `DEVELOPMENT_TEAM` nor a
+  `com.apple.developer.team-identifier` entitlement helps — it needs a real signing certificate, i.e.
+  a device build. Run `xcrun simctl spawn booted log show --last 2m --predicate 'process == "linkd"
+  OR process == "DevinIntents"'` to see it; anything else in that log is a real bug.
 - Swift 5 language mode with `SWIFT_STRICT_CONCURRENCY=complete` — keep things `Sendable`.
 - Comments are sparse by design. Don't document the diff; document the invariant.
 
@@ -265,9 +289,10 @@ don't crash. `DevinError.forbidden` already exists.
 - [x] **Widget** (WidgetKit): `DevinWidget/` target, small + medium `NeedsYouWidget` fed by
       `WidgetContent.resolve` (never the API); rows link to `SessionSnapshot.Entry.deepLink.url`.
       Not yet seen on a real home screen — only the Simulator.
-- [ ] **App Intents / Siri / Shortcuts**: `StartDevinSessionIntent(prompt, repo?)`,
-      `ReplyToDevinIntent(session, message)`, `WhatIsDevinWaitingOnIntent`. Reuse `DevinKit`
-      directly from the intent extension.
+- [x] **App Intents / Siri / Shortcuts**: `DevinIntents/` extension with `StartDevinSessionIntent(prompt, repo?)`,
+      `ReplyToDevinIntent(session, message)`, `WhatIsDevinWaitingOnIntent` and `DevinShortcuts` phrases
+      ("What is Devin waiting on", "Start a Devin session", "Reply to Devin"). Uses `DevinKit` directly.
+      Not yet exercised against the live API (no PAT); running the intents needs a device (see §2).
 - [ ] **Share Extension**: share a GitHub URL / text / image → prefilled New Session sheet.
 - [ ] **Live Activity** for a session you're watching (status + ACUs on the lock screen).
 - [ ] **Push via a relay** (optional, needs a server): tiny service that polls the API per user and
@@ -284,7 +309,8 @@ don't crash. `DevinError.forbidden` already exists.
 - New Swift files under `DevinMobile/` are picked up automatically by XcodeGen (`sources: DevinMobile`);
   no `project.yml` edits needed unless you add a target (widget/intents/share extension — those
   need new `targets:` entries plus an `entitlements:` block listing `group.ai.devin.mobile`; copy
-  `DevinWidget`). Extension sources live in their own top-level folder (`DevinWidget/`), never under
+  `DevinWidget`, or `DevinIntents` for an ExtensionKit `extensionkit-extension`). Extension sources
+  live in their own top-level folder (`DevinWidget/`, `DevinIntents/`), never under
   `DevinMobile/`, which the app target compiles wholesale. `Info.plist` / `.entitlements` files are
   generated by XcodeGen from `project.yml`; don't commit them.
 - Simulator builds that must exercise the App Group (widget, shared Keychain) need entitlements, so

@@ -155,6 +155,13 @@ Rules of thumb that the existing code follows:
   `SessionSnapshot.spokenSummary`; if the API is unreachable it reads the saved snapshot with its
   age. `-MockAPI` is in-process, so the extension cannot see mock data — in the Simulator it reports
   "not signed in" unless a real PAT is in the shared Keychain.
+  **Simulator limitation:** the Devin tiles show up in Shortcuts, but tapping one fails with "Unable
+  to run App Shortcut" because `linkd` refuses the ad-hoc-signed extension's phrase fetch
+  (`Unable to get teamId from ai.devin.mobile.intents … Rejecting invalid client due to
+  requiresValidBundle`, then `Couldn't find AppShortcutsProvider`). Neither `DEVELOPMENT_TEAM` nor a
+  `com.apple.developer.team-identifier` entitlement helps — it needs a real signing certificate, i.e.
+  a device build. Run `xcrun simctl spawn booted log show --last 2m --predicate 'process == "linkd"
+  OR process == "DevinIntents"'` to see it; anything else in that log is a real bug.
 - Swift 5 language mode with `SWIFT_STRICT_CONCURRENCY=complete` — keep things `Sendable`.
 - Comments are sparse by design. Don't document the diff; document the invariant.
 
@@ -285,7 +292,7 @@ don't crash. `DevinError.forbidden` already exists.
 - [x] **App Intents / Siri / Shortcuts**: `DevinIntents/` extension with `StartDevinSessionIntent(prompt, repo?)`,
       `ReplyToDevinIntent(session, message)`, `WhatIsDevinWaitingOnIntent` and `DevinShortcuts` phrases
       ("What is Devin waiting on", "Start a Devin session", "Reply to Devin"). Uses `DevinKit` directly.
-      Not yet exercised against the live API (no PAT); Siri itself needs a device.
+      Not yet exercised against the live API (no PAT); running the intents needs a device (see §2).
 - [ ] **Share Extension**: share a GitHub URL / text / image → prefilled New Session sheet.
 - [ ] **Live Activity** for a session you're watching (status + ACUs on the lock screen).
 - [ ] **Push via a relay** (optional, needs a server): tiny service that polls the API per user and

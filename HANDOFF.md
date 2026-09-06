@@ -30,7 +30,7 @@ Sign in with a PAT (`cog_…`, Devin → Settings → Devin API). Enterprise PAT
 ```
 DevinKit (no UI, platform-agnostic, unit-tested with MockTransport)
   Client/   DevinClient (async/await, Bearer, RFC 9457 → DevinError), HTTPTransport (injectable)
-  Models/   Session, SessionMessage, Playbook, Principal, Page<T>, NewSessionRequest/SessionQuery
+  Models/   Session, SessionMessage, Playbook, Principal, Page<T>, NewSessionRequest/SessionQuery, JSONValue
   Storage/  CredentialStore protocol; KeychainCredentialStore (iOS), InMemoryCredentialStore (tests/previews)
 
 DevinMobile (SwiftUI, iOS 17, @Observable + @MainActor, no third-party deps)
@@ -119,8 +119,8 @@ truth; the summary below was taken from it).
       `POST …/attachments` (multipart `file`) then pass `attachment_urls` to
       `POST …/messages` or to session creation. This is the most mobile-native win
       ("send Devin a screenshot of the bug").
-- [ ] **Structured output** — `SessionResponse.structured_output` (JSON object). Render as a
-      collapsible tree / pretty JSON with copy.
+- [x] **Structured output** — `Session.structuredOutput` is an opaque `JSONValue` (schema is
+      caller-defined); `StructuredOutputSection` renders a collapsible tree / pretty JSON with copy.
 - [ ] **Session insights** — `GET …/sessions/{id}/insights` (+ `POST …/insights/generate`):
       issues, timeline, action items, suggested prompt. Web shows this as a summary panel.
       "Suggested prompt → start new session" is a nice one-tap flow.

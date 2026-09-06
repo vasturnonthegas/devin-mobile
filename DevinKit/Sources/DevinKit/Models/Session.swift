@@ -99,6 +99,7 @@ public struct Session: Codable, Identifiable, Hashable, Sendable {
     public let category: SessionCategory?
     public let subcategory: String?
     public let automationID: String?
+    public let structuredOutput: JSONValue?
 
     public var id: String { sessionID }
 
@@ -124,6 +125,7 @@ public struct Session: Codable, Identifiable, Hashable, Sendable {
         case category
         case subcategory
         case automationID = "automation_id"
+        case structuredOutput = "structured_output"
     }
 
     public init(
@@ -147,7 +149,8 @@ public struct Session: Codable, Identifiable, Hashable, Sendable {
         userID: String? = nil,
         category: SessionCategory? = nil,
         subcategory: String? = nil,
-        automationID: String? = nil
+        automationID: String? = nil,
+        structuredOutput: JSONValue? = nil
     ) {
         self.sessionID = sessionID
         self.orgID = orgID
@@ -170,6 +173,7 @@ public struct Session: Codable, Identifiable, Hashable, Sendable {
         self.category = category
         self.subcategory = subcategory
         self.automationID = automationID
+        self.structuredOutput = structuredOutput
     }
 
     public init(from decoder: Decoder) throws {
@@ -195,6 +199,7 @@ public struct Session: Codable, Identifiable, Hashable, Sendable {
         category = try? c.decodeIfPresent(SessionCategory.self, forKey: .category)
         subcategory = try c.decodeIfPresent(String.self, forKey: .subcategory)
         automationID = try c.decodeIfPresent(String.self, forKey: .automationID)
+        structuredOutput = try? c.decodeIfPresent(JSONValue.self, forKey: .structuredOutput)
     }
 }
 

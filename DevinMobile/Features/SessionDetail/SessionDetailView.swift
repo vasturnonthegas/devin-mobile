@@ -180,17 +180,15 @@ struct MessageBubble: View {
     let message: SessionMessage
 
     private var isUser: Bool { message.source == .user }
+    private var background: AnyShapeStyle { isUser ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.quaternary) }
 
     var body: some View {
         VStack(alignment: isUser ? .trailing : .leading, spacing: 3) {
-            Text(LocalizedStringKey(message.message))
-                .textSelection(.enabled)
+            MarkdownMessageBody(markdown: message.message, fade: background)
+                .tint(isUser ? .white : .accentColor)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
-                .background(
-                    isUser ? AnyShapeStyle(.tint) : AnyShapeStyle(.quaternary),
-                    in: RoundedRectangle(cornerRadius: 16)
-                )
+                .background(background, in: RoundedRectangle(cornerRadius: 16))
                 .foregroundStyle(isUser ? .white : .primary)
             Text(message.createdAt, style: .time)
                 .font(.caption2)

@@ -18,3 +18,4 @@ DevinShareExtension/Info.plist
 DevinShareExtension/DevinShareExtension.entitlements
 DevinMobile/Info.plist
 DevinMobile/DevinMobile.entitlements
+.agents/skills/sprint-fanout/stories.json

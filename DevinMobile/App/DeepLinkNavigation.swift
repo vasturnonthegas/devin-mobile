@@ -5,13 +5,19 @@ extension View {
     /// Follows pending deep links by replacing `path` with the target session. Attach inside the
     /// inbox's `NavigationStack`, which owns `path`.
     func followsDeepLinks(store: SessionStore, path: Binding<NavigationPath>) -> some View {
-        modifier(DeepLinkNavigation(store: store, path: path))
+        modifier(DeepLinkNavigation(store: store) { path.wrappedValue = NavigationPath([$0]) })
+    }
+
+    /// Split-view variant: the caller decides how to show the resolved session (typically by setting
+    /// the sidebar selection). Attach to the sidebar column.
+    func followsDeepLinks(store: SessionStore, onSession: @escaping @MainActor (Session) -> Void) -> some View {
+        modifier(DeepLinkNavigation(store: store, show: onSession))
     }
 }
 
 private struct DeepLinkNavigation: ViewModifier {
     let store: SessionStore
-    @Binding var path: NavigationPath
+    let show: @MainActor (Session) -> Void
     // Optional so previews and tests that don't inject a router still render.
     @Environment(DeepLinkRouter.self) private var router: DeepLinkRouter?
 
@@ -34,7 +40,7 @@ private struct DeepLinkNavigation: ViewModifier {
                 } else {
                     session = try await store.reload(id: id)
                 }
-                path = NavigationPath([session])
+                show(session)
             } catch let error as DevinError {
                 store.error = error
             } catch {

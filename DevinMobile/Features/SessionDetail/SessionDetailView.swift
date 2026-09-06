@@ -6,6 +6,7 @@ struct SessionDetailView: View {
     @State private var model: SessionDetailModel
     @State private var attachments: SessionAttachmentsModel
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.dismissSplitDetail) private var dismissSplitDetail
     @Environment(\.openURL) private var openURL
 
     @State private var confirmTerminate = false
@@ -43,11 +44,20 @@ struct SessionDetailView: View {
                 Task {
                     guard await model.terminate() else { return }
                     await SessionLiveActivity.shared.stop(model.sessionID)
-                    dismiss()
+                    close()
                 }
             }
         } message: {
             Text("The VM is destroyed and the session can't be resumed. Use Sleep if you might come back to it.")
+        }
+    }
+
+    /// Leaves the session: pops when pushed, clears the iPad split-view selection when shown as the detail root.
+    private func close() {
+        if let dismissSplitDetail {
+            dismissSplitDetail()
+        } else {
+            dismiss()
         }
     }
 
@@ -195,6 +205,7 @@ struct SessionDetailView: View {
                     }
                 }
                 .accessibilityLabel(model.isSending ? "Sending" : "Send")
+                .keyboardShortcut(.return, modifiers: .command)
                 .disabled(!model.canSend)
                 .sensoryFeedback(.success, trigger: model.isSending) { old, new in old && !new }
             }
@@ -210,6 +221,11 @@ struct SessionDetailView: View {
     private func toolbar(for session: Session) -> some ToolbarContent {
         ToolbarItem(placement: .topBarTrailing) {
             Menu {
+                // Hardware-keyboard shortcuts (⌘R focus, ⌘↩ send) surface in the iPad ⌘-hold HUD.
+                Button("Reply", systemImage: "arrowshape.turn.up.left") { composerFocused = true }
+                    .keyboardShortcut("r", modifiers: .command)
+                    .disabled(!session.messaging.acceptsMessages)
+                Divider()
                 Button("Open in Devin", systemImage: "safari") { openURL(session.url) }
                 ShareLink(item: session.url) { Label("Share link", systemImage: "square.and.arrow.up") }
                 Button("Copy session ID", systemImage: "doc.on.doc") {
@@ -223,7 +239,7 @@ struct SessionDetailView: View {
                     Task {
                         guard await model.archive() else { return }
                         await SessionLiveActivity.shared.stop(session.sessionID)
-                        dismiss()
+                        close()
                     }
                 }
                 Button("Terminate", systemImage: "xmark.octagon", role: .destructive) {

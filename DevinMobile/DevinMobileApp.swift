@@ -4,6 +4,7 @@ import DevinKit
 @main
 struct DevinMobileApp: App {
     @State private var app = AppModel(store: DevinMobileApp.credentialStore)
+    @State private var router = DeepLinkRouter()
 
     init() {
         #if DEBUG
@@ -15,14 +16,17 @@ struct DevinMobileApp: App {
         #if DEBUG
         if MockAPI.isEnabled { return MockAPI.credentialStore }
         #endif
-        return KeychainCredentialStore()
+        // Shared with extensions via the App Group; a pre-existing app-private item is moved over once.
+        return AppGroup.credentialStore.adoptingCredentials(from: KeychainCredentialStore())
     }
 
     var body: some Scene {
         WindowGroup {
             RootView()
                 .environment(app)
+                .environment(router)
                 .task { app.restore() }
+                .onOpenURL { url in router.open(url) }
         }
     }
 }

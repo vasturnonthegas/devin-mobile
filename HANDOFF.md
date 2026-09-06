@@ -232,7 +232,10 @@ truth; the summary below was taken from it).
 - [x] **Attachments** on create — `NewSessionAttachmentsSection` reuses `ComposerAttachments`
       (same picker/upload/preview as the composer); uploaded URLs go out as `attachment_urls` on
       `POST …/sessions`. Start stays disabled until every upload finishes.
-- [ ] **Session links** (`session_links`) — link to a parent/related session.
+- [x] **Session links** (`session_links`) — session detail `⋯ → Start related session` opens the
+      New Session sheet with a "Related session" toggle; `NewSessionRequest.links(to:)` sends each
+      session's web URL (`Session.url`). The spec types the entries as bare strings, so URL-vs-ID
+      is unverified against the live API — if it wants IDs, only `links(to:)` changes.
 - [ ] **Prompt templates** — playbook body preview (`GET …/playbooks/{id}`) before starting.
 
 ### 4.4 Org management (web "Settings" pages) — lower priority on mobile, but cheap

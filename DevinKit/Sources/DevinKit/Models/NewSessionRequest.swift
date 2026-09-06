@@ -17,6 +17,8 @@ public struct NewSessionRequest: Encodable, Hashable, Sendable {
     public var structuredOutputSchema: JSONValue?
     public var knowledgeIDs: [String]?
     public var secretIDs: [String]?
+    /// Web URLs of related sessions Devin should read for context; build with `links(to:)`.
+    public var sessionLinks: [String]?
 
     enum CodingKeys: String, CodingKey {
         case prompt, repos, tags, title, resumable, platform
@@ -28,6 +30,7 @@ public struct NewSessionRequest: Encodable, Hashable, Sendable {
         case structuredOutputSchema = "structured_output_schema"
         case knowledgeIDs = "knowledge_ids"
         case secretIDs = "secret_ids"
+        case sessionLinks = "session_links"
     }
 
     public init(
@@ -44,7 +47,8 @@ public struct NewSessionRequest: Encodable, Hashable, Sendable {
         platform: String? = nil,
         structuredOutputSchema: JSONValue? = nil,
         knowledgeIDs: [String]? = nil,
-        secretIDs: [String]? = nil
+        secretIDs: [String]? = nil,
+        sessionLinks: [String]? = nil
     ) {
         self.prompt = prompt
         self.repos = repos
@@ -60,6 +64,15 @@ public struct NewSessionRequest: Encodable, Hashable, Sendable {
         self.structuredOutputSchema = structuredOutputSchema
         self.knowledgeIDs = knowledgeIDs
         self.secretIDs = secretIDs
+        self.sessionLinks = sessionLinks
+    }
+}
+
+public extension NewSessionRequest {
+    /// The spec types `session_links` as bare strings; the web app references a session by its
+    /// `app.devin.ai/sessions/…` URL, so that is what gets sent. An empty list omits the key.
+    static func links(to sessions: [Session]) -> [String]? {
+        sessions.isEmpty ? nil : sessions.map(\.url.absoluteString)
     }
 }
 

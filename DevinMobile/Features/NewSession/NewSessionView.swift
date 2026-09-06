@@ -3,7 +3,8 @@ import DevinKit
 
 struct NewSessionView: View {
     let store: SessionStore
-    var onCreated: (Session) -> Void
+    let relatedSession: Session?
+    let onCreated: (Session) -> Void
 
     @Environment(\.dismiss) private var dismiss
 
@@ -21,13 +22,21 @@ struct NewSessionView: View {
     @State private var knowledgeIDs: Set<String> = []
     @State private var secretIDs: Set<String> = []
     @State private var attachments: ComposerAttachments
+    @State private var linkRelatedSession = true
     @State private var isCreating = false
     @State private var errorMessage: String?
     @FocusState private var promptFocused: Bool
 
-    /// `initialPrompt` prefills the task field (e.g. an insights suggested prompt).
-    init(store: SessionStore, initialPrompt: String = "", onCreated: @escaping (Session) -> Void) {
+    /// `initialPrompt` prefills the task field (e.g. an insights suggested prompt);
+    /// `relatedSession` shows the "Related session" toggle and feeds `session_links`.
+    init(
+        store: SessionStore,
+        initialPrompt: String = "",
+        relatedSession: Session? = nil,
+        onCreated: @escaping (Session) -> Void
+    ) {
         self.store = store
+        self.relatedSession = relatedSession
         self.onCreated = onCreated
         _prompt = State(initialValue: initialPrompt)
         _attachments = State(initialValue: ComposerAttachments(client: store.client, orgID: store.orgID))
@@ -40,6 +49,11 @@ struct NewSessionView: View {
             && (attachments.items.isEmpty || attachments.isReadyToSend)
     }
 
+    private var linkedSessions: [Session] {
+        guard linkRelatedSession, let relatedSession else { return [] }
+        return [relatedSession]
+    }
+
     var body: some View {
         NavigationStack {
             Form {
@@ -47,6 +61,10 @@ struct NewSessionView: View {
                     TextField("What should Devin do?", text: $prompt, axis: .vertical)
                         .lineLimit(4...12)
                         .focused($promptFocused)
+                }
+
+                if let relatedSession {
+                    RelatedSessionSection(session: relatedSession, isLinked: $linkRelatedSession)
                 }
 
                 Section {
@@ -169,7 +187,8 @@ struct NewSessionView: View {
             tags: tags.isEmpty ? nil : tags,
             attachmentURLs: attachments.uploadedURLs.isEmpty ? nil : attachments.uploadedURLs,
             knowledgeIDs: knowledgeIDs.isEmpty ? nil : knowledgeIDs.sorted(),
-            secretIDs: secretIDs.isEmpty ? nil : secretIDs.sorted()
+            secretIDs: secretIDs.isEmpty ? nil : secretIDs.sorted(),
+            sessionLinks: NewSessionRequest.links(to: linkedSessions)
         )
 
         Task {

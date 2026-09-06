@@ -285,6 +285,7 @@ final class DevinClientTests: XCTestCase {
         XCTAssertEqual(body["max_acu_limit"] as? Int, 10)
         XCTAssertNil(body["title"], "nil optionals must be omitted, not sent as null")
         XCTAssertNil(body["attachment_urls"], "no attachments → key omitted, not null")
+        XCTAssertNil(body["session_links"], "no related sessions → key omitted, not null")
         XCTAssertEqual(session.sessionID, "devin-abc123")
     }
 
@@ -336,6 +337,30 @@ final class DevinClientTests: XCTestCase {
         let count = (encoded?["properties"] as? [String: Any])?["count"] as? [String: Any]
         XCTAssertEqual(count?["minimum"] as? Int, 1, "integral schema numbers round-trip without a fraction")
         XCTAssertEqual(count?["type"] as? String, "integer")
+    }
+
+    func testCreateSessionEncodesSessionLinksAsURLs() async throws {
+        transport.stub(json: Fixtures.sessionParent)
+        transport.stub(json: Fixtures.childSessionsPage)
+        transport.stub(json: Fixtures.sessionRunningWaiting)
+        let parent = try await client.session(org: "org-xyz", id: "devin-parent")
+        let related = try await client.sessions(org: "org-xyz").items
+
+        XCTAssertNil(NewSessionRequest.links(to: []), "empty list must not become an empty array")
+        var request = NewSessionRequest(prompt: "Follow up on the sprint")
+        request.sessionLinks = NewSessionRequest.links(to: [parent] + related)
+        _ = try await client.createSession(org: "org-xyz", request)
+
+        XCTAssertEqual(transport.lastRequest.httpMethod, "POST")
+        XCTAssertEqual(transport.lastRequest.url?.path, "/v3/organizations/org-xyz/sessions")
+        let body = transport.lastRequest.bodyJSON
+        XCTAssertEqual(body["prompt"] as? String, "Follow up on the sprint")
+        XCTAssertEqual(body["session_links"] as? [String], [
+            "https://app.devin.ai/sessions/parent",
+            "https://app.devin.ai/sessions/child1",
+            "https://app.devin.ai/sessions/child2",
+        ], "session_links carries each session's web URL, in order")
+        XCTAssertEqual(body.count, 2)
     }
 
     func testSendMessage() async throws {

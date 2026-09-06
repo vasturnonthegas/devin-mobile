@@ -86,6 +86,21 @@ enum MockAPI {
         )
     }
 
+    /// Sessions created through `POST …/sessions` this launch, newest first, so they survive the
+    /// inbox's next poll and their detail page resolves.
+    nonisolated(unsafe) private static var created: [Session] = []
+
+    static var allSessions: [Session] { generationLock.withLock { created } + sessions }
+
+    static func create(prompt: String) -> Session {
+        let id = "devin-mock-\(UUID().uuidString.prefix(6).lowercased())"
+        let session = Session(sessionID: id, orgID: "org-mock", status: .running, statusDetail: .working,
+                              title: String(prompt.prefix(60)), url: URL(string: "https://app.devin.ai/sessions/\(id)")!,
+                              createdAt: Date(), updatedAt: Date(), origin: .api, userID: members[0].userID)
+        generationLock.withLock { created.insert(session, at: 0) }
+        return session
+    }
+
     static func startGeneration(for sessionID: String) -> SessionInsightsGeneration {
         generationLock.withLock {
             if generatedAt[sessionID] != nil { return SessionInsightsGeneration(sessionID: sessionID, status: "already_exists") }
@@ -165,37 +180,37 @@ final class MockAPIProtocol: URLProtocol, @unchecked Sendable {
         let id = parts.count > 4 ? parts[4] : nil
         let sub = parts.count > 5 ? parts[5] : nil
 
+        let sessions = MockAPI.allSessions
         switch (method, id, sub) {
         case ("GET", nil, nil):
             let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
             let first = items.first { $0.name == "first" }?.value.flatMap(Int.init) ?? 100
             let offset = items.first { $0.name == "after" }?.value.flatMap(Int.init) ?? 0
-            let slice = Array(MockAPI.sessions.dropFirst(offset).prefix(first))
+            let slice = Array(sessions.dropFirst(offset).prefix(first))
             let end = offset + slice.count
             let page = Page(items: slice,
-                            endCursor: end < MockAPI.sessions.count ? String(end) : nil,
-                            hasNextPage: end < MockAPI.sessions.count,
-                            total: MockAPI.sessions.count)
+                            endCursor: end < sessions.count ? String(end) : nil,
+                            hasNextPage: end < sessions.count,
+                            total: sessions.count)
             return encode(page)
 
         case ("POST", nil, nil):
             struct Body: Decodable { let prompt: String }
             let prompt = body(of: request).flatMap { try? JSONDecoder().decode(Body.self, from: $0) }?.prompt ?? "New session"
-            let id = "devin-mock-\(UUID().uuidString.prefix(6).lowercased())"
-            return encode(Session(sessionID: id, orgID: "org-mock", status: .running, statusDetail: .working,
-                                  title: String(prompt.prefix(60)), url: URL(string: "https://app.devin.ai/sessions/\(id)")!,
-                                  createdAt: Date(), updatedAt: Date(), origin: .api, userID: MockAPI.members[0].userID))
+            return encode(MockAPI.create(prompt: prompt))
 
         case ("GET", let id?, nil), ("DELETE", let id?, nil), ("POST", let id?, "archive"):
-            guard let session = MockAPI.sessions.first(where: { $0.sessionID == id }) else { return notFound() }
+            guard let session = sessions.first(where: { $0.sessionID == id }) else { return notFound() }
             return encode(session)
 
         case ("GET", let id?, "insights"):
-            guard let index = MockAPI.sessions.firstIndex(where: { $0.sessionID == id }) else { return notFound() }
-            return encode(MockAPI.insights(for: MockAPI.sessions[index], index: index))
+            guard let session = sessions.first(where: { $0.sessionID == id }) else { return notFound() }
+            // Created-this-launch sessions have no catalogue index; index 0 puts them on the "generate" path.
+            let index = MockAPI.sessions.firstIndex(where: { $0.sessionID == id }) ?? 0
+            return encode(MockAPI.insights(for: session, index: index))
 
         case ("POST", let id?, "insights") where parts.count > 6 && parts[6] == "generate":
-            guard MockAPI.sessions.contains(where: { $0.sessionID == id }) else { return notFound() }
+            guard sessions.contains(where: { $0.sessionID == id }) else { return notFound() }
             return encode(MockAPI.startGeneration(for: id))
 
         case ("GET", _?, "messages"):

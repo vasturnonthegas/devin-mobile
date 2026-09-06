@@ -35,6 +35,9 @@ struct SessionInsightsPanel: View {
                     Image(systemName: "sparkles")
                 }
                 .font(.subheadline)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+                .onTapGesture { withAnimation(.snappy) { isExpanded.toggle() } }
             }
             .task { await model.load() }
             .onDisappear { model.cancelGeneration() }

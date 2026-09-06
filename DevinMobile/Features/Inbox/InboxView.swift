@@ -25,7 +25,9 @@ struct InboxView: View {
             scopedContent
                 .navigationTitle("Sessions")
                 .navigationDestination(for: Session.self) { session in
+                    // Keyed by ID so a deep link that replaces the top of the stack gets fresh detail state.
                     SessionDetailView(store: store, sessionID: session.id)
+                        .id(session.id)
                 }
                 .searchable(text: $query, prompt: "Title, tag, or ID")
                 .refreshable { await store.refresh() }
@@ -71,6 +73,7 @@ struct InboxView: View {
                 .sheet(isPresented: $showSettings) {
                     SettingsView()
                 }
+                .followsDeepLinks(store: store, path: $path)
         }
         .task { store.startPolling() }
         .task { await scope.resolveIdentity() }

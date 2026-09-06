@@ -32,11 +32,14 @@ DevinKit (no UI, platform-agnostic, unit-tested with MockTransport)
   Client/   DevinClient (async/await, Bearer, RFC 9457 → DevinError), HTTPTransport (injectable)
   Models/   Session, SessionMessage, Playbook, Principal, Page<T>, NewSessionRequest/SessionQuery, JSONValue
   Storage/  CredentialStore protocol; KeychainCredentialStore (iOS), InMemoryCredentialStore (tests/previews)
-  Sharing/  AppGroup (ids shared with extensions), DeepLink (devinmobile:// URLs), SessionSnapshot (last-known buckets)
+  Sharing/  AppGroup (ids shared with extensions), DeepLink (devinmobile:// URLs), SessionSnapshot (last-known buckets,
+            + `changes(since:)` bucket diff)
 
 DevinMobile (SwiftUI, iOS 17, @Observable + @MainActor, no third-party deps)
   App/          AppModel (auth state machine), SessionStore (list + polling), RecentRepos,
-                DeepLinkRouter + DeepLinkNavigation (URL scheme → inbox navigation)
+                DeepLinkRouter + DeepLinkNavigation (URL scheme → inbox navigation),
+                BackgroundRefresh (BGAppRefreshTask) + SessionNotifier (local notifications) +
+                NotificationDelegate (UNUserNotificationCenter delegate, owns the DeepLinkRouter)
   Features/     Onboarding, Inbox, SessionDetail (+ SessionDetailModel), NewSession, Settings
   Support/      StatusBadge, PullRequestLink (+ PullRequestStateBadge, ExternalLink),
                 Markdown/ (MarkdownDocument block tree + MarkdownView)
@@ -87,6 +90,22 @@ Rules of thumb that the existing code follows:
   `DeepLink.url`). `DevinMobileApp.onOpenURL` parks the link in `DeepLinkRouter`; the inbox's
   `.followsDeepLinks` replaces the navigation path once signed in, fetching the session by ID when it
   isn't on the loaded pages. `-OpenURL <url>` (DEBUG) simulates a cold start alongside `-MockAPI`.
+- **Background refresh = one poll of page 1, diffed against the snapshot.** `BackgroundRefresh`
+  (`BGAppRefreshTask` `ai.devin.mobile.refresh`, ~15 min, bound with `.backgroundTask(.appRefresh)`
+  and re-armed on every run and whenever a signed-in app backgrounds) fetches the unfiltered first
+  page, builds a `SessionSnapshot`, and posts one local notification per
+  `SessionSnapshot.notableChanges(since:)` — `working → needsYou` and `* → finished`, only for
+  sessions present in both snapshots (DevinKit, unit-tested). The new snapshot is saved *after*
+  the diff, so a failed fetch keeps the baseline. Notification requests are keyed `session-<id>`
+  (a later transition replaces the earlier banner); more than `SessionNotifier.summaryThreshold`
+  changes collapse into one summary. `userInfo["deepLink"]` carries the `devinmobile://` URL and
+  `NotificationDelegate` (a `@UIApplicationDelegateAdaptor`, set as the center's delegate in
+  `willFinishLaunching`) feeds taps into the same `DeepLinkRouter` as `onOpenURL`. The permission
+  prompt lives in onboarding (toggle, requested right after sign-in) and Settings
+  (`NotificationSettingsSection`). Simulate a run in the debugger with
+  `e -l objc -- (void)[[BGTaskScheduler sharedScheduler] _simulateLaunchForTaskWithIdentifier:@"ai.devin.mobile.refresh"]`,
+  or launch with `-MockAPI -SimulateBackgroundRefresh` (DEBUG), which flips three mock sessions
+  4 s after launch and runs one pass. `BGTaskScheduler.submit` fails silently in the Simulator.
 - Swift 5 language mode with `SWIFT_STRICT_CONCURRENCY=complete` — keep things `Sendable`.
 - Comments are sparse by design. Don't document the diff; document the invariant.
 
@@ -196,8 +215,10 @@ don't crash. `DevinError.forbidden` already exists.
 
 ### 4.5 Mobile-native (not in the web UI, but the reason this app exists)
 
-- [ ] **Local notifications**: `BGAppRefreshTask` every ~15 min; diff buckets vs last poll; notify on
-      `working → needsYou` and `→ finished`. Store last-known buckets in the app group container.
+- [x] **Local notifications**: `BackgroundRefresh` (`BGAppRefreshTask` every ~15 min) diffs the
+      `SessionSnapshot` in the App Group and `SessionNotifier` posts on `working → needsYou` and
+      `→ finished`; tap → `devinmobile://session/<id>`. Not yet observed against the live API (no
+      PAT); iOS decides the real cadence.
 - [x] **Shared plumbing** — App Group entitlement, `AppGroup.credentialStore` (Keychain access
       group), `SessionSnapshot` in the group container, `devinmobile://session/<id>` handled from
       cold start. Extensions still need their own `targets:` entry in `project.yml`.

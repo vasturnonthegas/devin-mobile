@@ -48,6 +48,9 @@ targets:
         NSPhotoLibraryUsageDescription: Pick screenshots and photos to attach to a message for Devin.
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: false
+        # `BackgroundRefresh.taskIdentifier` — the BGAppRefreshTask that polls for status changes.
+        UIBackgroundModes: [fetch]
+        BGTaskSchedulerPermittedIdentifiers: [ai.devin.mobile.refresh]
     # The App Group doubles as the Keychain access group (`AppGroup.identifier` in DevinKit); every
     # extension target must list the same group. CI builds with CODE_SIGNING_ALLOWED=NO, so no team is needed.
     entitlements:

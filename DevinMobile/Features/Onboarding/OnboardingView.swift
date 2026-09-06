@@ -7,6 +7,7 @@ struct OnboardingView: View {
     @State private var token = ""
     @State private var orgID = ""
     @State private var showOrgField = false
+    @State private var wantsNotifications = true
     @State private var isSigningIn = false
     @State private var errorMessage: String?
 
@@ -55,6 +56,14 @@ struct OnboardingView: View {
                     }
                 }
 
+                Section {
+                    Toggle(isOn: $wantsNotifications) {
+                        Label("Notify me when Devin needs me", systemImage: "bell.badge")
+                    }
+                } footer: {
+                    Text("Checks about every 15 minutes in the background and notifies you when a session is waiting on you or finishes. You can change this later in Settings.")
+                }
+
                 if let errorMessage {
                     Section {
                         Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
@@ -95,6 +104,8 @@ struct OnboardingView: View {
             defer { isSigningIn = false }
             do {
                 try await app.signIn(token: token, orgOverride: showOrgField ? orgID : nil)
+                // The system prompt appears over the inbox that has just replaced this view.
+                if wantsNotifications { await SessionNotifier.requestAuthorization() }
             } catch DevinError.missingOrganization {
                 showOrgField = true
                 errorMessage = DevinError.missingOrganization.errorDescription

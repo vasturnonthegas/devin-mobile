@@ -7,6 +7,7 @@ import DevinKit
 final class SessionDetailModel {
     let store: SessionStore
     let sessionID: String
+    let attachments: ComposerAttachments
 
     private(set) var messages: [SessionMessage] = []
     private(set) var isLoadingTranscript = false
@@ -19,12 +20,18 @@ final class SessionDetailModel {
     init(store: SessionStore, sessionID: String) {
         self.store = store
         self.sessionID = sessionID
+        self.attachments = ComposerAttachments(client: store.client, orgID: store.orgID)
     }
 
     var session: Session? { store.session(id: sessionID) }
 
+    private var trimmedDraft: String { draft.trimmingCharacters(in: .whitespacesAndNewlines) }
+
+    /// Text or attachments; never while an upload is in flight or failed (the user removes/retries first).
     var canSend: Bool {
-        !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !isSending && (session?.isActive ?? false)
+        (!trimmedDraft.isEmpty || attachments.isReadyToSend)
+            && !attachments.isUploading && !attachments.hasFailures
+            && !isSending && (session?.isActive ?? false)
     }
 
     func refresh() async {
@@ -56,13 +63,15 @@ final class SessionDetailModel {
     }
 
     func send() async {
-        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        let urls = attachments.uploadedURLs
+        let text = trimmedDraft.isEmpty && !urls.isEmpty ? attachments.fallbackMessage : trimmedDraft
         guard !text.isEmpty else { return }
         isSending = true
         defer { isSending = false }
         do {
-            try await store.client.send(message: text, org: store.orgID, id: sessionID)
+            try await store.client.send(message: text, attachmentURLs: urls, org: store.orgID, id: sessionID)
             draft = ""
+            attachments.clear()
             // Optimistically show the message; the next poll replaces it with the server copy.
             messages.append(SessionMessage(eventID: "local-\(UUID().uuidString)", source: .user, message: text, createdAt: .now))
             await refresh()

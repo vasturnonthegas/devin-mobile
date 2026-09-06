@@ -127,7 +127,13 @@ struct SessionDetailView: View {
     private func composer(for session: Session) -> some View {
         VStack(spacing: 0) {
             Divider()
+            if !model.attachments.items.isEmpty || model.attachments.error != nil {
+                ComposerAttachmentsBar(attachments: model.attachments)
+            }
             HStack(alignment: .bottom, spacing: 8) {
+                AttachmentPickerButton(attachments: model.attachments)
+                    .disabled(!session.isActive)
+
                 TextField(
                     session.isActive ? "Message Devin…" : "Session is asleep — messages resume it",
                     text: $model.draft,

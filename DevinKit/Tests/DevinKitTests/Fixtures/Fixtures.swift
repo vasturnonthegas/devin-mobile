@@ -73,6 +73,30 @@ enum Fixtures {
     }
     """
 
+    /// Every PR state the UI models plus a future one and a `null` — both must render neutrally.
+    static let sessionWithPullRequests = """
+    {
+      "session_id": "devin-prs001",
+      "org_id": "org-xyz",
+      "status": "exit",
+      "status_detail": "finished",
+      "title": "Ship B4",
+      "url": "https://app.devin.ai/sessions/prs001",
+      "tags": [],
+      "pull_requests": [
+        {"pr_url": "https://github.com/acme/api/pull/42", "pr_state": "open"},
+        {"pr_url": "https://github.com/acme/api/pull/43", "pr_state": "draft"},
+        {"pr_url": "https://github.com/acme/api/pull/44", "pr_state": "MERGED"},
+        {"pr_url": "https://github.com/acme/api/pull/45", "pr_state": "closed"},
+        {"pr_url": "https://gitlab.com/acme/web/-/merge_requests/9", "pr_state": "locked_by_bot"},
+        {"pr_url": "https://example.com/review/77", "pr_state": null}
+      ],
+      "acus_consumed": 2,
+      "created_at": 1756800000,
+      "updated_at": 1756809000
+    }
+    """
+
     static let sessionParent = """
     {
       "session_id": "devin-parent",
@@ -258,6 +282,20 @@ enum Fixtures {
 
     static let sessionTags = """
     {"tags": ["bug", "auth", "Mobile Sprint 1"], "future_field": "ignored"}
+    """
+
+    static let attachmentUploaded = """
+    {
+      "attachment_id": "att-7f3a9c",
+      "name": "bug.png",
+      "url": "https://api.devin.ai/v3/organizations/org-xyz/attachments/7f3a9c1e-2b4d-4f6a-9c8e-1d2e3f4a5b6c/bug.png",
+      "content_type": "image/png",
+      "scan_status": "pending_future_value"
+    }
+    """
+
+    static let problem413Attachment = """
+    {"status": 413, "title": "Payload Too Large", "detail": "Attachments must be 25 MB or smaller", "type": "about:blank"}
     """
 
     static let problem422Tags = """

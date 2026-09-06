@@ -40,6 +40,8 @@ targets:
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
         ITSAppUsesNonExemptEncryption: false
+        NSCameraUsageDescription: Take a photo to attach to a message for Devin.
+        NSPhotoLibraryUsageDescription: Pick screenshots and photos to attach to a message for Devin.
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: false
     settings:

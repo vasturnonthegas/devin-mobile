@@ -3,6 +3,24 @@ import Foundation
 import FoundationNetworking
 #endif
 
+// MARK: Attachment upload
+
+public extension DevinClient {
+    /// Uploads a file as a multipart `file` part. Pass the returned `url` in `attachment_urls`
+    /// when sending a message or creating a session.
+    func upload(data: Data, filename: String, mime: String, org: String) async throws -> UploadedAttachment {
+        var form = MultipartFormData()
+        form.appendFile(name: "file", filename: filename, mimeType: mime, data: data)
+
+        var request = makeRequest(.post, "/v3/organizations/\(org)/attachments")
+        request.httpBody = form.encoded()
+        request.setValue(form.contentType, forHTTPHeaderField: "Content-Type")
+
+        let response = try await perform(request)
+        return try decode(response)
+    }
+}
+
 // MARK: Attachment download
 
 public extension DevinClient {

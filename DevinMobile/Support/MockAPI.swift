@@ -44,7 +44,7 @@ enum MockAPI {
                 title: "\(titles[i % titles.count]) #\(i)",
                 url: URL(string: "https://app.devin.ai/sessions/\(id)")!,
                 tags: i % 3 == 0 ? ["mobile", "sprint-1"] : [],
-                pullRequests: i % 4 == 0 ? [PullRequest(url: URL(string: "https://github.com/acme/app/pull/\(100 + i)")!, state: "open")] : [],
+                pullRequests: pullRequests(forSessionIndex: i),
                 acusConsumed: Double(i % 7) * 0.75,
                 createdAt: now.addingTimeInterval(-Double(i) * 3_600 - 600),
                 updatedAt: now.addingTimeInterval(-Double(i) * 3_600),
@@ -54,6 +54,18 @@ enum MockAPI {
             )
         }
     }()
+
+    /// Every fourth session has a PR, cycling through these states; the first session gets one PR
+    /// per state so a single screen shows every badge plus the neutral fallback.
+    static let pullRequestStates: [String?] = ["open", "draft", "merged", "closed", "locked_by_bot", nil]
+
+    static func pullRequests(forSessionIndex i: Int) -> [PullRequest] {
+        guard i % 4 == 0 else { return [] }
+        let states = i == 0 ? pullRequestStates : [pullRequestStates[(i / 4) % pullRequestStates.count]]
+        return states.enumerated().map { offset, state in
+            PullRequest(url: URL(string: "https://github.com/acme/app/pull/\(100 + i + offset)")!, state: state)
+        }
+    }
 
     static let members: [OrgMember] = [
         OrgMember(userID: "user-mock", email: "mock@example.com", name: "Mock User"),
@@ -162,6 +174,11 @@ final class MockAPIProtocol: URLProtocol, @unchecked Sendable {
         if method == "GET", parts.count == 6, parts[0] == "v3", parts[3] == "attachments" {
             return MockAPI.attachmentBody(uuid: parts[4], name: parts[5]).map { (200, $0) } ?? notFound()
         }
+        if method == "POST", parts.count == 4, parts[0] == "v3", parts[3] == "attachments" {
+            let uuid = UUID().uuidString.lowercased()
+            return encode(UploadedAttachment(attachmentID: "att-\(uuid.prefix(8))", name: "upload.png",
+                                             url: URL(string: "https://api.devin.ai/v3/organizations/org-mock/attachments/\(uuid)/upload.png")!))
+        }
         // Everything else is /v3/organizations/{org}/sessions[/{id}[/{sub}]]
         guard parts.count >= 4, parts[0] == "v3", parts[1] == "organizations", parts[3] == "sessions" else { return notFound() }
         let id = parts.count > 4 ? parts[4] : nil
@@ -180,7 +197,7 @@ final class MockAPIProtocol: URLProtocol, @unchecked Sendable {
                             total: MockAPI.sessions.count)
             return encode(page)
 
-        case ("GET", let id?, nil), ("DELETE", let id?, nil), ("POST", let id?, "archive"):
+        case ("GET", let id?, nil), ("DELETE", let id?, nil), ("POST", let id?, "archive"), ("POST", let id?, "messages"):
             guard let session = MockAPI.sessions.first(where: { $0.sessionID == id }) else { return notFound() }
             return encode(session)
 

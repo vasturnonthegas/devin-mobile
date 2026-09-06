@@ -31,7 +31,7 @@ final class SessionDetailModel {
     var canSend: Bool {
         (!trimmedDraft.isEmpty || attachments.isReadyToSend)
             && !attachments.isUploading && !attachments.hasFailures
-            && !isSending && (session?.isActive ?? false)
+            && !isSending && (session?.messaging.acceptsMessages ?? false)
     }
 
     func refresh() async {
@@ -74,7 +74,9 @@ final class SessionDetailModel {
             attachments.clear()
             // Optimistically show the message; the next poll replaces it with the server copy.
             messages.append(SessionMessage(eventID: "local-\(UUID().uuidString)", source: .user, message: text, createdAt: .now))
-            await refresh()
+            // A message to a sleeping session resumes it: restart polling so the 30 s idle cadence
+            // doesn't hide the suspended → resuming → running transition.
+            startPolling()
         } catch {
             self.error = error.localizedDescription
         }

@@ -327,6 +327,10 @@ enum Fixtures {
     {"status": 413, "title": "Payload Too Large", "detail": "Attachments must be 25 MB or smaller", "type": "about:blank"}
     """
 
+    static let problem409SessionEnded = """
+    {"status": 409, "title": "Conflict", "detail": "Session devin-jkl012 has exited and cannot be resumed", "type": "about:blank"}
+    """
+
     static let problem422Tags = """
     {"status": 422, "title": "Unprocessable Content", "detail": "Tag 'nope' is not in the organization's allowed tags", "type": "about:blank"}
     """

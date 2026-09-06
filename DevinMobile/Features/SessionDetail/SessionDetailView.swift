@@ -34,11 +34,16 @@ struct SessionDetailView: View {
             model.startPolling()
         }
         .onDisappear { model.stopPolling() }
+        .syncsLiveActivity(with: model.session)
         .suggestedPromptSessionFlow(store: model.store, draft: $suggestedPrompt)
         .relatedSessionFlow(store: model.store, session: model.session, isPresented: $showRelatedSession)
         .confirmationDialog("Terminate this session?", isPresented: $confirmTerminate, titleVisibility: .visible) {
             Button("Terminate", role: .destructive) {
-                Task { if await model.terminate() { dismiss() } }
+                Task {
+                    guard await model.terminate() else { return }
+                    await SessionLiveActivity.shared.stop(model.sessionID)
+                    dismiss()
+                }
             }
         } message: {
             Text("The VM is destroyed and the session can't be resumed. Use Sleep if you might come back to it.")
@@ -84,6 +89,7 @@ struct SessionDetailView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 StatusBadge(session: session)
+                LiveActivityBadge(sessionID: session.sessionID)
                 Spacer()
                 if let mode = session.devinMode {
                     Text(mode.displayName).font(.caption).foregroundStyle(.secondary)
@@ -210,8 +216,13 @@ struct SessionDetailView: View {
                 Divider()
                 Button("Start related session", systemImage: "plus.bubble") { showRelatedSession = true }
                 Divider()
+                LiveActivityMenuItems(session: session, model: model)
                 Button("Sleep & archive", systemImage: "moon.zzz") {
-                    Task { if await model.archive() { dismiss() } }
+                    Task {
+                        guard await model.archive() else { return }
+                        await SessionLiveActivity.shared.stop(session.sessionID)
+                        dismiss()
+                    }
                 }
                 Button("Terminate", systemImage: "xmark.octagon", role: .destructive) {
                     confirmTerminate = true

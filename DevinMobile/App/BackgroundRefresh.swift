@@ -26,6 +26,7 @@ enum BackgroundRefresh {
         schedule()
         guard let credentials = try? store.load() else { return }
         let client = DevinClient(token: credentials.token)
+        await SessionLiveActivity.shared.refresh(client: client, orgID: credentials.orgID)
         guard let page = try? await client.sessions(org: credentials.orgID, query: SessionQuery(first: 50)) else { return }
         let current = SessionSnapshot(sessions: page.items)
         if let previous = SessionSnapshot.load() {

@@ -714,6 +714,37 @@ final class DevinClientTests: XCTestCase {
         let page = try await client.playbooks(org: "org-xyz")
         XCTAssertEqual(page.items.first?.title, "Fix CI")
         XCTAssertEqual(page.items.first?.macro, "!fixci")
+        XCTAssertEqual(page.items.first?.accessType, .org)
+    }
+
+    func testPlaybookDetailBuildsURLAndDecodes() async throws {
+        transport.stub(json: Fixtures.playbookDetail)
+        let playbook = try await client.playbook(org: "org-xyz", id: "playbook-1")
+
+        XCTAssertEqual(transport.lastRequest.httpMethod, "GET")
+        XCTAssertEqual(transport.lastRequest.url?.path, "/v3/organizations/org-xyz/playbooks/playbook-1")
+        XCTAssertNil(transport.lastRequest.url?.query)
+        XCTAssertNil(transport.lastRequest.httpBody)
+        XCTAssertEqual(transport.lastRequest.value(forHTTPHeaderField: "Authorization"), "Bearer cog_test")
+        XCTAssertEqual(transport.lastRequest.value(forHTTPHeaderField: "Accept"), "application/json")
+
+        XCTAssertEqual(playbook.playbookID, "playbook-1")
+        XCTAssertEqual(playbook.title, "Fix CI")
+        XCTAssertEqual(playbook.macro, "!fixci")
+        XCTAssertTrue(playbook.body.hasPrefix("# Fix CI\n\n1. Run the failing job locally."))
+        XCTAssertTrue(playbook.body.hasSuffix("```sh\nswift test\n```"))
+        XCTAssertEqual(playbook.updatedAt, Date(timeIntervalSince1970: 1_756_886_400))
+        XCTAssertNil(playbook.accessType, "unknown access_type must decode as nil, not fail")
+    }
+
+    func testPlaybookDetailNotFound() async throws {
+        transport.stub(404, json: #"{"status": 404, "title": "Not Found", "detail": "Playbook not found", "type": "about:blank"}"#)
+        do {
+            _ = try await client.playbook(org: "org-xyz", id: "playbook-missing")
+            XCTFail("expected notFound")
+        } catch DevinError.notFound(let problem) {
+            XCTAssertEqual(problem?.detail, "Playbook not found")
+        }
     }
 
     func testMembersBuildsQueryAndDecodes() async throws {

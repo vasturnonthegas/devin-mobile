@@ -223,6 +223,10 @@ final class MockAPIProtocol: URLProtocol, @unchecked Sendable {
             return encode(UploadedAttachment(attachmentID: "att-\(uuid.prefix(8))", name: "upload.png",
                                              url: URL(string: "https://api.devin.ai/v3/organizations/org-mock/attachments/\(uuid)/upload.png")!))
         }
+        if method == "GET", parts.count >= 4, parts[0] == "v3", parts[1] == "organizations", parts[3] == "playbooks" {
+            if parts.count == 4 { return (200, MockAPI.playbooksJSON()) }
+            return MockAPI.playbookJSON(id: parts[4]).map { (200, $0) } ?? notFound()
+        }
         // Everything else is /v3/organizations/{org}/sessions[/{id}[/{sub}]]
         guard parts.count >= 4, parts[0] == "v3", parts[1] == "organizations", parts[3] == "sessions" else { return notFound() }
         let id = parts.count > 4 ? parts[4] : nil

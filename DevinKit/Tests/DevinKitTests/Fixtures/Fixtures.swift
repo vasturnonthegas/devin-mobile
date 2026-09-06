@@ -403,4 +403,21 @@ enum Fixtures {
       "has_next_page": false
     }
     """
+
+    /// `access_type: "team"` is not in the spec's enum on purpose.
+    static let playbookDetail = """
+    {
+      "playbook_id": "playbook-1",
+      "title": "Fix CI",
+      "body": "# Fix CI\\n\\n1. Run the failing job locally.\\n2. Open a PR with the fix.\\n\\n```sh\\nswift test\\n```",
+      "macro": "!fixci",
+      "created_by": "user-1",
+      "updated_by": "user-2",
+      "created_at": 1756800000,
+      "updated_at": 1756886400,
+      "access_type": "team",
+      "org_id": "org-xyz",
+      "structured_output_schema": {"type": "object", "properties": {"fixed": {"type": "boolean"}}}
+    }
+    """
 }

@@ -13,6 +13,12 @@ settings:
     SWIFT_STRICT_CONCURRENCY: complete
     ENABLE_USER_SCRIPT_SANDBOXING: YES
     CODE_SIGN_STYLE: Automatic
+    # Single source of truth for CFBundleShortVersionString / CFBundleVersion of every target (App Store
+    # Connect rejects an extension whose version differs from the app's). `.github/workflows/testflight.yml`
+    # overrides both on the xcodebuild command line (tag `vX.Y.Z` → X.Y.Z, run number → build);
+    # never hard-code them per target.
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
 
 packages:
   DevinKit:
@@ -33,8 +39,8 @@ targets:
       path: DevinMobile/Info.plist
       properties:
         CFBundleDisplayName: Devin
-        CFBundleShortVersionString: "0.1.0"
-        CFBundleVersion: "1"
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         # Launch screen = system background + the app icon tile (`Scripts/make-app-icon.swift` renders both
         # from one mark), so it blends into RootView and matches the home screen in light and dark.
         UILaunchScreen:
@@ -42,8 +48,10 @@ targets:
           UIImageName: LaunchGlyph
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
+        # iPad must list all four orientations unless UIRequiresFullScreen; App Store Connect rejects otherwise.
         UISupportedInterfaceOrientations~ipad:
           - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
         ITSAppUsesNonExemptEncryption: false
@@ -87,8 +95,8 @@ targets:
       path: DevinWidget/Info.plist
       properties:
         CFBundleDisplayName: Devin
-        CFBundleShortVersionString: "0.1.0"
-        CFBundleVersion: "1"
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
     entitlements:
@@ -117,8 +125,8 @@ targets:
       path: DevinIntents/Info.plist
       properties:
         CFBundleDisplayName: Devin
-        CFBundleShortVersionString: "0.1.0"
-        CFBundleVersion: "1"
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         EXAppExtensionAttributes:
           EXExtensionPointIdentifier: com.apple.appintents-extension
     entitlements:
@@ -145,8 +153,8 @@ targets:
       path: DevinShareExtension/Info.plist
       properties:
         CFBundleDisplayName: Devin
-        CFBundleShortVersionString: "0.1.0"
-        CFBundleVersion: "1"
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         NSExtension:
           NSExtensionPointIdentifier: com.apple.share-services
           NSExtensionPrincipalClass: DevinShareExtension.ShareViewController

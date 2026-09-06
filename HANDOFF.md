@@ -11,6 +11,7 @@ agents from a phone. Read this, then `README.md`, then the code — it's small.
 | `DevinKit/` Swift package (API client, models, Keychain) | Done for the session/message/playbook surface. 13 XCTest cases, pass on Linux + macOS. |
 | `DevinMobile/` SwiftUI app | Compiles cleanly for iOS Simulator on CI (`xcodebuild`, zero warnings). **Never run against the live API yet** — no PAT was available. Expect first-run bugs. |
 | CI (`.github/workflows/ci.yml`) | `swift test` on `swift:6.0-jammy` + `macos-15`; `xcodegen generate` + simulator build. Green on `main`. |
+| TestFlight (`.github/workflows/testflight.yml`) | Tag `vX.Y.Z` → Release archive, App Store Connect export, `altool` upload. **Needs the owner's signing secrets** (§6 item 5); until they exist the job fails at its first step listing what is missing. Never run end-to-end yet. |
 | Devin environment | Devin macOS sessions have Xcode (26.x) and iPhone simulators; `brew install xcodegen` is needed before `xcodegen generate`. Linux sessions only run `cd DevinKit && swift test`. |
 | Repo | `github.com/vasturnonthegas/devin-mobile`, trunk `main`. Work is tracked as GitHub issues (epics #3–#9) and `Sprint N` milestones — see §7. |
 
@@ -387,6 +388,14 @@ don't crash. `DevinError.forbidden` already exists.
   screen's `LaunchGlyph` are rendered by `swift Scripts/make-app-icon.swift`; edit the script, re-run,
   commit both. Never hand-edit the PNGs. The launch screen is `UILaunchScreen` in `project.yml`
   (`LaunchBackground` = `systemBackgroundColor`, so it blends into `RootView`).
+- **Versions are build settings, not per-target literals.** `MARKETING_VERSION` / `CURRENT_PROJECT_VERSION`
+  in `project.yml`'s `settings.base` feed `CFBundleShortVersionString` / `CFBundleVersion` of the app
+  *and* every extension (App Store Connect rejects mismatches). Nobody bumps them by hand: pushing a
+  tag `vX.Y.Z` (a `-suffix` is stripped) runs `testflight.yml`, which passes `MARKETING_VERSION=X.Y.Z
+  CURRENT_PROJECT_VERSION=<run number>` to `xcodebuild archive` and fails if either archived
+  Info.plist disagrees. `workflow_dispatch` (optional `version`, `upload=false` for a dry run) exists
+  for testing the pipeline without a tag. Keep the iPad orientation list complete (all four) — the
+  Release archive warns and App Store Connect rejects otherwise.
 - Don't add third-party packages without asking; the app is intentionally dependency-free.
 - Never log tokens. `DevinClient` builds the `Authorization` header in one place — keep it that way.
 - If the OpenAPI spec disagrees with this doc, the spec wins. Re-fetch it at session start.
@@ -401,6 +410,12 @@ don't crash. `DevinError.forbidden` already exists.
    blue accent (§5). The bundle ID is effectively final (App Group + Keychain depend on it); the artwork
    and colour are Devin's defaults — swap them by editing `Scripts/make-app-icon.swift` and
    `AccentColor.colorset` if the owner wants different branding.
+5. TestFlight signing: add repository secrets `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_API_KEY_P8`
+   (App Store Connect API key, App Manager/Admin with cloud-managed distribution certificate access;
+   raw PEM or base64) and `APPLE_TEAM_ID`; optionally `DISTRIBUTION_CERTIFICATE_P12_BASE64` +
+   `DISTRIBUTION_CERTIFICATE_PASSWORD` to skip cloud signing. Register `ai.devin.mobile`,
+   `ai.devin.mobile.widget`, `ai.devin.mobile.intents` and `ai.devin.mobile.share` (all in App Group
+   `group.ai.devin.mobile`) in App Store Connect, then push `v0.1.0`.
 
 ## 7. Process
 

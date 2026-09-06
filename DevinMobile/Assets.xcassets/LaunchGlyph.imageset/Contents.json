@@ -1,10 +1,9 @@
 {
   "images" : [
     {
-      "filename" : "AppIcon-light.png",
+      "filename" : "LaunchGlyph@2x.png",
       "idiom" : "universal",
-      "platform" : "ios",
-      "size" : "1024x1024"
+      "scale" : "2x"
     },
     {
       "appearances" : [
@@ -13,22 +12,25 @@
           "value" : "dark"
         }
       ],
-      "filename" : "AppIcon-dark.png",
+      "filename" : "LaunchGlyph-dark@2x.png",
       "idiom" : "universal",
-      "platform" : "ios",
-      "size" : "1024x1024"
+      "scale" : "2x"
+    },
+    {
+      "filename" : "LaunchGlyph@3x.png",
+      "idiom" : "universal",
+      "scale" : "3x"
     },
     {
       "appearances" : [
         {
           "appearance" : "luminosity",
-          "value" : "tinted"
+          "value" : "dark"
         }
       ],
-      "filename" : "AppIcon-tinted.png",
+      "filename" : "LaunchGlyph-dark@3x.png",
       "idiom" : "universal",
-      "platform" : "ios",
-      "size" : "1024x1024"
+      "scale" : "3x"
     }
   ],
   "info" : {

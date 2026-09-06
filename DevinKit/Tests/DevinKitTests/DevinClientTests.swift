@@ -205,6 +205,87 @@ final class DevinClientTests: XCTestCase {
         try await client.send(message: "LGTM, merge it", org: "org-xyz", id: "devin-abc123")
         XCTAssertEqual(transport.lastRequest.url?.path, "/v3/organizations/org-xyz/sessions/devin-abc123/messages")
         XCTAssertEqual(transport.lastRequest.bodyJSON["message"] as? String, "LGTM, merge it")
+        XCTAssertNil(transport.lastRequest.bodyJSON["attachment_urls"], "no attachments → key omitted, not null")
+
+        transport.stub(json: "null")
+        try await client.send(message: "empty list", attachmentURLs: [], org: "org-xyz", id: "devin-abc123")
+        XCTAssertNil(transport.lastRequest.bodyJSON["attachment_urls"])
+    }
+
+    func testSendMessageWithAttachmentURLs() async throws {
+        transport.stub(json: Fixtures.sessionRunningWaiting)
+        let url = URL(string: "https://api.devin.ai/v3/organizations/org-xyz/attachments/7f3a9c1e/bug.png")!
+
+        try await client.send(message: "Here's the crash", attachmentURLs: [url], org: "org-xyz", id: "devin-abc123")
+
+        XCTAssertEqual(transport.lastRequest.httpMethod, "POST")
+        XCTAssertEqual(transport.lastRequest.url?.path, "/v3/organizations/org-xyz/sessions/devin-abc123/messages")
+        XCTAssertEqual(transport.lastRequest.value(forHTTPHeaderField: "Content-Type"), "application/json")
+        let body = transport.lastRequest.bodyJSON
+        XCTAssertEqual(body["message"] as? String, "Here's the crash")
+        XCTAssertEqual(body["attachment_urls"] as? [String], [url.absoluteString])
+        XCTAssertEqual(body.count, 2)
+    }
+
+    func testUploadAttachmentBuildsMultipartAndDecodes() async throws {
+        transport.stub(json: Fixtures.attachmentUploaded)
+        let bytes = Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0xFF])
+
+        let uploaded = try await client.upload(data: bytes, filename: "bug.png", mime: "image/png", org: "org-xyz")
+
+        let request = transport.lastRequest
+        XCTAssertEqual(request.httpMethod, "POST")
+        XCTAssertEqual(request.url?.path, "/v3/organizations/org-xyz/attachments")
+        XCTAssertNil(request.url?.query)
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer cog_test")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Accept"), "application/json")
+
+        let contentType = request.value(forHTTPHeaderField: "Content-Type") ?? ""
+        let prefix = "multipart/form-data; boundary="
+        XCTAssertTrue(contentType.hasPrefix(prefix), "got \(contentType)")
+        let boundary = String(contentType.dropFirst(prefix.count))
+        XCTAssertFalse(boundary.isEmpty)
+
+        let body = request.httpBody!
+        let head = Data("""
+        --\(boundary)\r
+        Content-Disposition: form-data; name="file"; filename="bug.png"\r
+        Content-Type: image/png\r
+        \r
+
+        """.utf8)
+        let tail = Data("\r\n--\(boundary)--\r\n".utf8)
+        XCTAssertEqual(body, head + bytes + tail, "exactly one `file` part, raw bytes untouched, CRLF framing")
+
+        XCTAssertEqual(uploaded.attachmentID, "att-7f3a9c")
+        XCTAssertEqual(uploaded.name, "bug.png")
+        XCTAssertEqual(uploaded.url.absoluteString, "https://api.devin.ai/v3/organizations/org-xyz/attachments/7f3a9c1e-2b4d-4f6a-9c8e-1d2e3f4a5b6c/bug.png")
+    }
+
+    func testUploadAttachmentSanitizesFilename() async throws {
+        transport.stub(json: Fixtures.attachmentUploaded)
+        _ = try await client.upload(data: Data("x".utf8), filename: "we\"ird\r\nname\\.txt", mime: "text/plain", org: "org-xyz")
+        let body = String(decoding: transport.lastRequest.httpBody!, as: UTF8.self)
+        XCTAssertTrue(body.contains("filename=\"we_ird__name_.txt\""), body)
+
+        transport.stub(json: Fixtures.attachmentUploaded)
+        _ = try await client.upload(data: Data("x".utf8), filename: "", mime: "application/octet-stream", org: "org-xyz")
+        XCTAssertTrue(String(decoding: transport.lastRequest.httpBody!, as: UTF8.self).contains("filename=\"file\""))
+    }
+
+    func testUploadAttachmentTooLargeIsTypedError() async {
+        transport.stub(413, json: Fixtures.problem413Attachment)
+        do {
+            _ = try await client.upload(data: Data(count: 16), filename: "huge.mov", mime: "video/quicktime", org: "org-xyz")
+            XCTFail("expected error")
+        } catch let error as DevinError {
+            guard case .http(let status, let problem) = error else { return XCTFail("expected http error, got \(error)") }
+            XCTAssertEqual(status, 413)
+            XCTAssertEqual(error.errorDescription, "Attachments must be 25 MB or smaller")
+            XCTAssertEqual(problem?.title, "Payload Too Large")
+        } catch {
+            XCTFail("wrong error type: \(error)")
+        }
     }
 
     func testAllMessagesFollowsCursor() async throws {

@@ -260,6 +260,20 @@ enum Fixtures {
     {"tags": ["bug", "auth", "Mobile Sprint 1"], "future_field": "ignored"}
     """
 
+    static let attachmentUploaded = """
+    {
+      "attachment_id": "att-7f3a9c",
+      "name": "bug.png",
+      "url": "https://api.devin.ai/v3/organizations/org-xyz/attachments/7f3a9c1e-2b4d-4f6a-9c8e-1d2e3f4a5b6c/bug.png",
+      "content_type": "image/png",
+      "scan_status": "pending_future_value"
+    }
+    """
+
+    static let problem413Attachment = """
+    {"status": 413, "title": "Payload Too Large", "detail": "Attachments must be 25 MB or smaller", "type": "about:blank"}
+    """
+
     static let problem422Tags = """
     {"status": 422, "title": "Unprocessable Content", "detail": "Tag 'nope' is not in the organization's allowed tags", "type": "about:blank"}
     """

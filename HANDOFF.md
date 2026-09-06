@@ -36,7 +36,8 @@ DevinKit (no UI, platform-agnostic, unit-tested with MockTransport)
   Sharing/  AppGroup (ids shared with extensions), DeepLink (devinmobile:// URLs), SessionSnapshot (last-known buckets,
             + `changes(since:)` bucket diff, `spokenSummary` for Siri, `entries(matching:)` title search),
             WidgetContent (signed-out / awaiting-first-load / sessions, from Keychain + snapshot),
-            GitHubLink (github.com URL → `repos` path), SharedDraft (share-sheet payload parked in the App Group)
+            GitHubLink (github.com URL → `repos` path), SharedDraft (share-sheet payload parked in the App Group),
+            SessionActivityAttributes (Live Activity attributes + State; ActivityKit conformance is iOS-only)
 
 DevinMobile (SwiftUI, iOS 17, @Observable + @MainActor, no third-party deps)
   App/          AppModel (auth state machine), SessionStore (list + polling), RecentRepos (cache),
@@ -44,13 +45,15 @@ DevinMobile (SwiftUI, iOS 17, @Observable + @MainActor, no third-party deps)
                 BackgroundRefresh (BGAppRefreshTask) + SessionNotifier (local notifications) +
                 NotificationDelegate (UNUserNotificationCenter delegate, owns the DeepLinkRouter),
                 WidgetTimeline (publishes SessionSnapshot + reloads WidgetKit),
-                SharedDraftFlow (pending SharedDraft → prefilled NewSessionView on activation)
+                SharedDraftFlow (pending SharedDraft → prefilled NewSessionView on activation),
+                SessionLiveActivity (the one pinned Live Activity: start/stop/update/refresh)
   Features/     Onboarding, Inbox, SessionDetail (+ SessionDetailModel), NewSession (+ RepoPicker), Settings
   Support/      StatusBadge, PullRequestLink (+ PullRequestStateBadge, ExternalLink),
                 Markdown/ (MarkdownDocument block tree + MarkdownView)
 
 DevinWidget (WidgetKit extension, `ai.devin.mobile.widget`, same App Group; embedded in the app)
   NeedsYouWidget (small + medium): "N sessions need you" + top 3 rows → devinmobile://session/<id>
+  SessionActivityWidget: lock screen + Dynamic Island for the pinned session (status, ACUs, freshness)
 
 DevinIntents (App Intents extension, `ai.devin.mobile.intents`, same App Group; embedded under Extensions/)
   StartDevinSessionIntent(prompt, repo?) · ReplyToDevinIntent(session, message) · WhatIsDevinWaitingOnIntent
@@ -178,6 +181,17 @@ Rules of thumb that the existing code follows:
   (same B3 path as the picker) and opens `NewSessionView(initialPrompt:initialRepos:initialAttachments:)`.
   Taking the draft deletes it; drafts older than `SharedDraft.maxAge` (24 h) are dropped. Simulate one
   with `-MockAPI -SharedDraft "<text>" [-SharedDraftImage]` (DEBUG).
+- **One Live Activity, and ActivityKit is its only store.** `SessionLiveActivity` (app, `@MainActor`)
+  pins a session from the detail `⋯` menu ("Watch on Lock Screen"); starting another ends the first.
+  Which session is pinned is read back from `Activity<SessionActivityAttributes>.activities` — nothing
+  in defaults, because activities outlive the process. Content is pushed wherever a fresh `Session`
+  appears: the detail view's poll (`.syncsLiveActivity`, skipped unless a visible field changed or
+  60 s passed) and `BackgroundRefresh.run` (one `GET …/sessions/{id}` per run, before the inbox page).
+  A session that `isFinal` (`finished`, `exit`, `error` — *not* `suspended`) ends the activity with that
+  state left on the lock screen; Stop / Terminate / Sleep & archive end it immediately. `staleDate` is
+  `updatedAt + 20 min`, so a missed refresh renders "May be out of date". `Activity` is not `Sendable`:
+  every ActivityKit call lives in a `nonisolated` helper keyed by session ID. The app's Info.plist needs
+  `NSSupportsLiveActivities` (set in `project.yml`); the extension needs nothing extra.
 - Swift 5 language mode with `SWIFT_STRICT_CONCURRENCY=complete` — keep things `Sendable`.
 - Comments are sparse by design. Don't document the diff; document the invariant.
 
@@ -316,7 +330,9 @@ don't crash. `DevinError.forbidden` already exists.
 - [x] **Share Extension**: `DevinShareExtension/` target; GitHub URL → `repos`, text/URL → prompt,
       images → attachments uploaded by the app. Not yet driven from a real share sheet on device — only
       compiled, registered (`pluginkit -m`) and exercised through the App Group handoff in the Simulator.
-- [ ] **Live Activity** for a session you're watching (status + ACUs on the lock screen).
+- [x] **Live Activity** for a session you're watching (status + ACUs on the lock screen):
+      `SessionLiveActivity` + `SessionActivityWidget`, fed by the detail poll and `BackgroundRefresh`.
+      Push-to-start / remote updates wait for a relay (see below). Not yet seen on a real lock screen.
 - [ ] **Push via a relay** (optional, needs a server): tiny service that polls the API per user and
       sends APNs. Only worth it if background refresh proves too laggy.
 - [ ] **iPad / macOS (Catalyst or Designed-for-iPad)**: `NavigationSplitView` for inbox + detail.

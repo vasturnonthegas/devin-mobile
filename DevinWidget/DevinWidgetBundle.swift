@@ -5,6 +5,7 @@ import WidgetKit
 struct DevinWidgetBundle: WidgetBundle {
     var body: some Widget {
         NeedsYouWidget()
+        SessionActivityWidget()
     }
 }
 

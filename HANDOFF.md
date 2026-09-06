@@ -35,14 +35,16 @@ DevinKit (no UI, platform-agnostic, unit-tested with MockTransport)
   Storage/  CredentialStore protocol; KeychainCredentialStore (iOS), InMemoryCredentialStore (tests/previews)
   Sharing/  AppGroup (ids shared with extensions), DeepLink (devinmobile:// URLs), SessionSnapshot (last-known buckets,
             + `changes(since:)` bucket diff, `spokenSummary` for Siri, `entries(matching:)` title search),
-            WidgetContent (signed-out / awaiting-first-load / sessions, from Keychain + snapshot)
+            WidgetContent (signed-out / awaiting-first-load / sessions, from Keychain + snapshot),
+            GitHubLink (github.com URL → `repos` path), SharedDraft (share-sheet payload parked in the App Group)
 
 DevinMobile (SwiftUI, iOS 17, @Observable + @MainActor, no third-party deps)
   App/          AppModel (auth state machine), SessionStore (list + polling), RecentRepos (cache),
                 DeepLinkRouter + DeepLinkNavigation (URL scheme → inbox navigation),
                 BackgroundRefresh (BGAppRefreshTask) + SessionNotifier (local notifications) +
                 NotificationDelegate (UNUserNotificationCenter delegate, owns the DeepLinkRouter),
-                WidgetTimeline (publishes SessionSnapshot + reloads WidgetKit)
+                WidgetTimeline (publishes SessionSnapshot + reloads WidgetKit),
+                SharedDraftFlow (pending SharedDraft → prefilled NewSessionView on activation)
   Features/     Onboarding, Inbox, SessionDetail (+ SessionDetailModel), NewSession (+ RepoPicker), Settings
   Support/      StatusBadge, PullRequestLink (+ PullRequestStateBadge, ExternalLink),
                 Markdown/ (MarkdownDocument block tree + MarkdownView)
@@ -53,6 +55,9 @@ DevinWidget (WidgetKit extension, `ai.devin.mobile.widget`, same App Group; embe
 DevinIntents (App Intents extension, `ai.devin.mobile.intents`, same App Group; embedded under Extensions/)
   StartDevinSessionIntent(prompt, repo?) · ReplyToDevinIntent(session, message) · WhatIsDevinWaitingOnIntent
   SessionEntity (+ SessionEntityQuery over the snapshot), DevinShortcuts (Siri phrases), SignedInDevin (Keychain → DevinClient)
+
+DevinShareExtension (share sheet, `ai.devin.mobile.share`, same App Group; embedded in the app)
+  ShareViewController → ShareItemLoader (URL / text / images) → ShareModel + ShareDraftView → SharedDraft.save
 ```
 
 Rules of thumb that the existing code follows:
@@ -162,6 +167,17 @@ Rules of thumb that the existing code follows:
   `com.apple.developer.team-identifier` entitlement helps — it needs a real signing certificate, i.e.
   a device build. Run `xcrun simctl spawn booted log show --last 2m --predicate 'process == "linkd"
   OR process == "DevinIntents"'` to see it; anything else in that log is a real bug.
+- **The share extension never creates a session; it parks a `SharedDraft`.** `ShareItemLoader` maps
+  the share sheet's items (GitHub URL / text / up to 5 images) onto the form — `GitHubLink` turns any
+  `github.com/owner/repo[/pull/N|/issues/N|…]` URL into a `repos` entry, a bare repo URL stays out of the
+  prompt, PR/issue/other URLs and text go in — and `SharedDraft.save` writes JSON to `AppGroup.defaults`
+  plus image bytes to `<group container>/SharedDraft/`. Opening the app from a share extension is
+  best-effort (`NSExtensionContext.open` is Today-only on iOS; the responder-chain `openURL:` fallback
+  is what everyone ships), so the draft is *always* saved first and `SharedDraftFlow` picks it up on the
+  next `scenePhase == .active` while signed in, uploads the images through `ComposerAttachments`
+  (same B3 path as the picker) and opens `NewSessionView(initialPrompt:initialRepos:initialAttachments:)`.
+  Taking the draft deletes it; drafts older than `SharedDraft.maxAge` (24 h) are dropped. Simulate one
+  with `-MockAPI -SharedDraft "<text>" [-SharedDraftImage]` (DEBUG).
 - Swift 5 language mode with `SWIFT_STRICT_CONCURRENCY=complete` — keep things `Sendable`.
 - Comments are sparse by design. Don't document the diff; document the invariant.
 
@@ -294,6 +310,12 @@ don't crash. `DevinError.forbidden` already exists.
       ("What is Devin waiting on", "Start a Devin session", "Reply to Devin"). Uses `DevinKit` directly.
       Not yet exercised against the live API (no PAT); running the intents needs a device (see §2).
 - [ ] **Share Extension**: share a GitHub URL / text / image → prefilled New Session sheet.
+- [ ] **App Intents / Siri / Shortcuts**: `StartDevinSessionIntent(prompt, repo?)`,
+      `ReplyToDevinIntent(session, message)`, `WhatIsDevinWaitingOnIntent`. Reuse `DevinKit`
+      directly from the intent extension.
+- [x] **Share Extension**: `DevinShareExtension/` target; GitHub URL → `repos`, text/URL → prompt,
+      images → attachments uploaded by the app. Not yet driven from a real share sheet on device — only
+      compiled, registered (`pluginkit -m`) and exercised through the App Group handoff in the Simulator.
 - [ ] **Live Activity** for a session you're watching (status + ACUs on the lock screen).
 - [ ] **Push via a relay** (optional, needs a server): tiny service that polls the API per user and
       sends APNs. Only worth it if background refresh proves too laggy.
@@ -311,6 +333,9 @@ don't crash. `DevinError.forbidden` already exists.
   need new `targets:` entries plus an `entitlements:` block listing `group.ai.devin.mobile`; copy
   `DevinWidget`, or `DevinIntents` for an ExtensionKit `extensionkit-extension`). Extension sources
   live in their own top-level folder (`DevinWidget/`, `DevinIntents/`), never under
+  `DevinWidget` or `DevinShareExtension`). A non-WidgetKit extension also needs
+  `LM_SKIP_METADATA_EXTRACTION: YES`, or the App Intents metadata step logs a `warning:` CI flags.
+  Extension sources live in their own top-level folder (`DevinWidget/`), never under
   `DevinMobile/`, which the app target compiles wholesale. `Info.plist` / `.entitlements` files are
   generated by XcodeGen from `project.yml`; don't commit them.
 - Simulator builds that must exercise the App Group (widget, shared Keychain) need entitlements, so

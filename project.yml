@@ -28,6 +28,7 @@ targets:
       - package: DevinKit
       - target: DevinWidget
       - target: DevinIntents
+      - target: DevinShareExtension
     info:
       path: DevinMobile/Info.plist
       properties:
@@ -124,6 +125,42 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: ai.devin.mobile.intents
         TARGETED_DEVICE_FAMILY: "1,2"
         SKIP_INSTALL: YES
+
+  # Share sheet → New Session. Parses the shared URL / text / images into a `SharedDraft`, parks it in
+  # the App Group and brings the app forward; the app uploads the images and shows the prefilled form.
+  DevinShareExtension:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: DevinShareExtension
+    dependencies:
+      - package: DevinKit
+    info:
+      path: DevinShareExtension/Info.plist
+      properties:
+        CFBundleDisplayName: Devin
+        CFBundleShortVersionString: "0.1.0"
+        CFBundleVersion: "1"
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.share-services
+          NSExtensionPrincipalClass: DevinShareExtension.ShareViewController
+          NSExtensionAttributes:
+            NSExtensionActivationRule:
+              NSExtensionActivationSupportsWebURLWithMaxCount: 1
+              NSExtensionActivationSupportsText: true
+              NSExtensionActivationSupportsImageWithMaxCount: 5
+    entitlements:
+      path: DevinShareExtension/DevinShareExtension.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.ai.devin.mobile
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: ai.devin.mobile.share
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SKIP_INSTALL: YES
+        # No App Intents in this target; without this the metadata extractor logs a `warning:` CI would flag.
+        LM_SKIP_METADATA_EXTRACTION: YES
 
 schemes:
   DevinMobile:

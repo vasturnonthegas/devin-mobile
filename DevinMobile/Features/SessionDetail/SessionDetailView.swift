@@ -9,6 +9,7 @@ struct SessionDetailView: View {
     @Environment(\.openURL) private var openURL
 
     @State private var confirmTerminate = false
+    @State private var suggestedPrompt: SuggestedPromptDraft?
     @FocusState private var composerFocused: Bool
 
     init(store: SessionStore, sessionID: String) {
@@ -32,6 +33,7 @@ struct SessionDetailView: View {
             model.startPolling()
         }
         .onDisappear { model.stopPolling() }
+        .suggestedPromptSessionFlow(store: model.store, draft: $suggestedPrompt)
         .confirmationDialog("Terminate this session?", isPresented: $confirmTerminate, titleVisibility: .visible) {
             Button("Terminate", role: .destructive) {
                 Task { if await model.terminate() { dismiss() } }
@@ -120,6 +122,13 @@ struct SessionDetailView: View {
 
             if let output = session.structuredOutput {
                 StructuredOutputSection(output: output)
+            }
+
+            // Insights are about a finished run; hide them while Devin is still working.
+            if session.bucket != .working {
+                SessionInsightsPanel(store: model.store, sessionID: session.sessionID) { prompt in
+                    suggestedPrompt = SuggestedPromptDraft(prompt: prompt)
+                }
             }
         }
         .padding(12)

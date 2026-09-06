@@ -375,6 +375,80 @@ enum Fixtures {
     {"status": 403, "title": "Forbidden", "detail": "Missing permission: ViewOrgMembers", "type": "about:blank"}
     """
 
+    static let sessionInsights = """
+    {
+      "session_id": "devin-abc123",
+      "org_id": "org-xyz",
+      "url": "https://app.devin.ai/sessions/abc123",
+      "status": "exit",
+      "status_detail": "finished",
+      "title": "Fix login bug",
+      "tags": ["bug"],
+      "pull_requests": [],
+      "acus_consumed": 3.25,
+      "created_at": 1756800000,
+      "updated_at": 1756803600,
+      "num_user_messages": 4,
+      "num_devin_messages": 11,
+      "session_size": "m",
+      "analysis": {
+        "issues": [
+          {"id": "issue-1", "title": "Flaky test masked the bug", "issue": "The auth test suite was already red, so Devin could not tell its fix worked.",
+           "impact": "Two extra iterations (~1.2 ACU).", "label": "environment"},
+          {"id": "", "title": "", "issue": "Prompt did not name the target branch.", "impact": "Devin opened the PR against develop.", "label": "prompt"}
+        ],
+        "timeline": [
+          {"title": "Reproduced the bug", "color": "green", "description": "Ran the failing login flow locally.", "issue_id": null},
+          {"title": "Blocked on flaky tests", "color": "red", "description": "Spent 20 minutes on unrelated failures.", "issue_id": "issue-1"}
+        ],
+        "action_items": [
+          {"type": "repo_config", "action_item": "Quarantine the flaky auth tests.", "issue_id": "issue-1"},
+          {"type": "prompt_improvement", "action_item": "State the base branch in the prompt.", "issue_id": null},
+          {"type": "brand_new_type", "action_item": "Something this build has never heard of."}
+        ],
+        "suggested_prompt": {
+          "original_prompt": "Fix the login bug",
+          "suggested_prompt": "Fix the login bug in acme/api (base branch: main). The flaky tests in tests/auth are known and can be skipped.",
+          "feedback_items": [
+            {"summary": "Name the base branch", "excerpt": "Fix the login bug", "details": "Devin guessed develop.", "issue_id": null}
+          ]
+        },
+        "note_usage": {"good_usages": [], "bad_usages": []},
+        "classification": {"category": "bug_fixing", "confidence": 0.93, "tools_and_frameworks": ["pytest"], "programming_languages": ["Python"]}
+      }
+    }
+    """
+
+    static let sessionInsightsPending = """
+    {
+      "session_id": "devin-abc123",
+      "org_id": "org-xyz",
+      "url": "https://app.devin.ai/sessions/abc123",
+      "status": "exit",
+      "tags": [],
+      "pull_requests": [],
+      "acus_consumed": 3.25,
+      "created_at": 1756800000,
+      "updated_at": 1756803600,
+      "num_user_messages": 4,
+      "num_devin_messages": 11,
+      "session_size": "xxxl",
+      "analysis": null
+    }
+    """
+
+    static let insightsGenerateStarted = """
+    {"session_id": "devin-abc123", "status": "started"}
+    """
+
+    static let insightsGenerateAlreadyExists = """
+    {"session_id": "devin-abc123", "status": "already_exists"}
+    """
+
+    static let problem403Insights = """
+    {"status": 403, "title": "Forbidden", "detail": "Missing permission: ViewOrgSessions", "type": "about:blank"}
+    """
+
     static let prReviewPending = """
     {"status": "pending", "repo_path": "github.com/acme/api", "pr_number": 42,
      "commit_sha": "abc123def4567890abc123def4567890abc123de", "created_at": "2026-09-02T10:00:00Z"}

@@ -7,7 +7,7 @@ struct NewSessionView: View {
 
     @Environment(\.dismiss) private var dismiss
 
-    @State private var prompt = ""
+    @State private var prompt: String
     @State private var repoInput = ""
     @State private var selectedRepos: [String] = []
     @State private var recentRepos = RecentRepos.load()
@@ -22,6 +22,13 @@ struct NewSessionView: View {
     @State private var isCreating = false
     @State private var errorMessage: String?
     @FocusState private var promptFocused: Bool
+
+    /// `initialPrompt` prefills the task field (e.g. an insights suggested prompt).
+    init(store: SessionStore, initialPrompt: String = "", onCreated: @escaping (Session) -> Void) {
+        self.store = store
+        self.onCreated = onCreated
+        _prompt = State(initialValue: initialPrompt)
+    }
 
     private var canCreate: Bool {
         !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !isCreating && advanced.isValid

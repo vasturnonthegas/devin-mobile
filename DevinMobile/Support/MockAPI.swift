@@ -89,7 +89,7 @@ enum MockAPI {
     static func wake(id: String) { woken.insert(id) }
 
     static func session(id: String) -> Session? {
-        sessions.first(where: { $0.sessionID == id }).map(current)
+        allSessions.first(where: { $0.sessionID == id }).map(current)
     }
 
     /// The catalogue is immutable; `current` overlays the only state the mock tracks (suspended → resuming,
@@ -118,6 +118,83 @@ enum MockAPI {
         OrgMember(userID: "user-mock-2", email: "priya@example.com", name: "Priya Natarajan"),
         OrgMember(userID: "user-mock-3", email: "sam.rivera@example.com", name: nil),
     ]
+
+    // MARK: Insights
+
+    /// Finished sessions (every 3rd) ship with analysis; the rest have none until `generate` is
+    /// called, after which the analysis "arrives" on the second poll (`generatedAt` + `generationDelay`).
+    static let generationDelay: TimeInterval = 5
+    private static let generationLock = NSLock()
+    nonisolated(unsafe) private static var generatedAt: [String: Date] = [:]
+
+    static func insights(for session: Session, index: Int) -> SessionInsights {
+        let ready: Bool = {
+            if index % 3 == 2 { return true }
+            return generationLock.withLock {
+                guard let started = generatedAt[session.sessionID] else { return false }
+                return Date().timeIntervalSince(started) >= generationDelay
+            }
+        }()
+        return SessionInsights(
+            sessionID: session.sessionID,
+            numUserMessages: 2 + index % 5,
+            numDevinMessages: 7 + index % 9,
+            size: SessionInsights.Size.allCases[index % SessionInsights.Size.allCases.count],
+            analysis: ready ? analysis(for: session) : nil
+        )
+    }
+
+    /// Sessions created through `POST …/sessions` this launch, newest first, so they survive the
+    /// inbox's next poll and their detail page resolves.
+    nonisolated(unsafe) private static var created: [Session] = []
+
+    static var allSessions: [Session] { generationLock.withLock { created } + sessions }
+
+    static func create(prompt: String) -> Session {
+        let id = "devin-mock-\(UUID().uuidString.prefix(6).lowercased())"
+        let session = Session(sessionID: id, orgID: "org-mock", status: .running, statusDetail: .working,
+                              title: String(prompt.prefix(60)), url: URL(string: "https://app.devin.ai/sessions/\(id)")!,
+                              createdAt: Date(), updatedAt: Date(), origin: .api, userID: members[0].userID)
+        generationLock.withLock { created.insert(session, at: 0) }
+        return session
+    }
+
+    static func startGeneration(for sessionID: String) -> SessionInsightsGeneration {
+        generationLock.withLock {
+            if generatedAt[sessionID] != nil { return SessionInsightsGeneration(sessionID: sessionID, status: "already_exists") }
+            generatedAt[sessionID] = Date()
+            return SessionInsightsGeneration(sessionID: sessionID, status: "started")
+        }
+    }
+
+    private static func analysis(for session: Session) -> SessionInsightsAnalysis {
+        let title = session.title ?? session.sessionID
+        return SessionInsightsAnalysis(
+            issues: [
+                SessionInsightsIssue(issueID: "issue-1", title: "Flaky CI masked the fix", issue: "The test suite was already red on main, so Devin could not tell whether its change worked.",
+                                     impact: "Two extra iterations (~1.2 ACU).", label: "environment"),
+                SessionInsightsIssue(issue: "The prompt did not name the base branch.", impact: "The PR was opened against develop.", label: "prompt"),
+            ],
+            timeline: [
+                SessionInsightsTimelineEvent(title: "Reproduced the problem", description: "Ran the failing flow locally and captured logs.", color: "green"),
+                SessionInsightsTimelineEvent(title: "Blocked on unrelated failures", description: "Spent ~20 minutes on pre-existing red tests.", color: "red", issueID: "issue-1"),
+                SessionInsightsTimelineEvent(title: "Opened PR", description: "Pushed the fix and requested review.", color: "blue"),
+            ],
+            actionItems: [
+                SessionInsightsActionItem(kind: .repoConfig, actionItem: "Quarantine the flaky tests or mark them as known failures.", issueID: "issue-1"),
+                SessionInsightsActionItem(kind: .promptImprovement, actionItem: "State the base branch and the definition of done in the prompt."),
+                SessionInsightsActionItem(kind: nil, actionItem: "An action item type this build doesn't know about."),
+            ],
+            suggestedPrompt: SessionInsightsSuggestedPrompt(
+                originalPrompt: title,
+                suggestedPrompt: "\(title). Work in acme/app on a branch off main and open a PR against main. The tests under tests/legacy are known to be flaky — skip them. Done means: CI green and a short summary of the change in the PR body.",
+                feedbackItems: [
+                    SessionInsightsFeedbackItem(summary: "Name the base branch", excerpt: title, details: "Devin guessed develop."),
+                    SessionInsightsFeedbackItem(summary: "Say what done looks like", excerpt: title, details: "No acceptance criteria were given."),
+                ]
+            )
+        )
+    }
 
     /// Devin Reviews keyed by PR URL. Every other mock PR starts reviewed; triggering one walks
     /// pending → running → completed over `reviewDuration` seconds of wall-clock time.
@@ -234,22 +311,38 @@ final class MockAPIProtocol: URLProtocol, @unchecked Sendable {
         let id = parts.count > 4 ? parts[4] : nil
         let sub = parts.count > 5 ? parts[5] : nil
 
+        let sessions = MockAPI.allSessions
         switch (method, id, sub) {
         case ("GET", nil, nil):
             let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
             let first = items.first { $0.name == "first" }?.value.flatMap(Int.init) ?? 100
             let offset = items.first { $0.name == "after" }?.value.flatMap(Int.init) ?? 0
-            let slice = MockAPI.sessions.dropFirst(offset).prefix(first).map(MockAPI.current)
+            let slice = sessions.dropFirst(offset).prefix(first).map(MockAPI.current)
             let end = offset + slice.count
             let page = Page(items: slice,
-                            endCursor: end < MockAPI.sessions.count ? String(end) : nil,
-                            hasNextPage: end < MockAPI.sessions.count,
-                            total: MockAPI.sessions.count)
+                            endCursor: end < sessions.count ? String(end) : nil,
+                            hasNextPage: end < sessions.count,
+                            total: sessions.count)
             return encode(page)
+
+        case ("POST", nil, nil):
+            struct Body: Decodable { let prompt: String }
+            let prompt = body(of: request).flatMap { try? JSONDecoder().decode(Body.self, from: $0) }?.prompt ?? "New session"
+            return encode(MockAPI.create(prompt: prompt))
 
         case ("GET", let id?, nil), ("DELETE", let id?, nil), ("POST", let id?, "archive"):
             guard let session = MockAPI.session(id: id) else { return notFound() }
             return encode(session)
+
+        case ("GET", let id?, "insights"):
+            guard let session = sessions.first(where: { $0.sessionID == id }) else { return notFound() }
+            // Created-this-launch sessions have no catalogue index; index 0 puts them on the "generate" path.
+            let index = MockAPI.sessions.firstIndex(where: { $0.sessionID == id }) ?? 0
+            return encode(MockAPI.insights(for: session, index: index))
+
+        case ("POST", let id?, "insights") where parts.count > 6 && parts[6] == "generate":
+            guard sessions.contains(where: { $0.sessionID == id }) else { return notFound() }
+            return encode(MockAPI.startGeneration(for: id))
 
         case ("GET", let id?, "messages"):
             return encode(Page(items: MockAPI.messages(for: id)))

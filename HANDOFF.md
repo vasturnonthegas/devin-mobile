@@ -75,6 +75,13 @@ Rules of thumb that the existing code follows:
 - **Simulator without a PAT.** Launch with `-MockAPI` (DEBUG only) to run against an in-process
   fake API (`DevinMobile/Support/MockAPI.swift`, 130 sessions) backed by `InMemoryCredentialStore`.
   `POST …/messages` to a suspended mock session flips it to `resuming`; to an exited one returns 409.
+  `POST …/sessions` appends to an in-memory `created` list (served by list + detail for the rest of
+  the launch); `…/insights` has analysis for every third session and "arrives" 5 s after `generate`.
+- **Insights are generated, not fetched.** `GET …/sessions/{id}/insights` returns `analysis: null`
+  until `POST …/insights/generate` has run server-side, so `SessionInsightsModel` polls the GET every
+  4 s (≤ 150 s) after Generate. `SessionInsightsPanel` is shown only for non-`working` sessions; a 403
+  on either call is sticky and removes the panel (`isForbidden`). "Use this prompt" opens
+  `NewSessionView(initialPrompt:)` via `.suggestedPromptSessionFlow` and pushes the created session.
 - **Attachment bytes go through `DevinClient.attachmentData`.** `GET …/sessions/{id}/attachments`
   returns a bare array (not the cursor envelope). Attachment URLs point at the API, which 307s to a
   presigned URL; the client sends the Bearer token only to `baseURL.host` and URLSession drops it on
@@ -175,9 +182,10 @@ truth; the summary below was taken from it).
       ("send Devin a screenshot of the bug").
 - [x] **Structured output** — `Session.structuredOutput` is an opaque `JSONValue` (schema is
       caller-defined); `StructuredOutputSection` renders a collapsible tree / pretty JSON with copy.
-- [ ] **Session insights** — `GET …/sessions/{id}/insights` (+ `POST …/insights/generate`):
-      issues, timeline, action items, suggested prompt. Web shows this as a summary panel.
-      "Suggested prompt → start new session" is a nice one-tap flow.
+- [x] **Session insights** — `GET …/sessions/{id}/insights` (+ `POST …/insights/generate`):
+      `SessionInsightsPanel` (collapsible, in the detail header) shows issues, timeline, action
+      items and the suggested prompt; "Use this prompt" prefills New Session. Not yet exercised
+      against the live API (no PAT).
 - [x] **Pull request states** — `PullRequestState` typed from `pr_state`, badges via
       `PullRequestStateBadge`; `ExternalLink.open` prefers the Universal-Link app (GitHub) over Safari.
 - [x] **Devin Review** — `POST/GET …/pr-reviews` to trigger/see review status for a PR URL.

@@ -608,6 +608,77 @@ final class DevinClientTests: XCTestCase {
         XCTAssertEqual(SessionTags.maxCount, 50)
     }
 
+    func testSessionInsightsGetDecodesAnalysis() async throws {
+        transport.stub(json: Fixtures.sessionInsights)
+        let insights = try await client.sessionInsights(org: "org-xyz", id: "devin-abc123")
+
+        XCTAssertEqual(transport.lastRequest.httpMethod, "GET")
+        XCTAssertEqual(transport.lastRequest.url?.path, "/v3/organizations/org-xyz/sessions/devin-abc123/insights")
+        XCTAssertNil(transport.lastRequest.url?.query)
+        XCTAssertNil(transport.lastRequest.httpBody)
+        XCTAssertEqual(transport.lastRequest.value(forHTTPHeaderField: "Authorization"), "Bearer cog_test")
+
+        XCTAssertEqual(insights.sessionID, "devin-abc123")
+        XCTAssertEqual(insights.numUserMessages, 4)
+        XCTAssertEqual(insights.numDevinMessages, 11)
+        XCTAssertEqual(insights.size, .m)
+        XCTAssertTrue(insights.hasAnalysis)
+
+        let analysis = try XCTUnwrap(insights.analysis)
+        XCTAssertFalse(analysis.isEmpty)
+        XCTAssertEqual(analysis.issues.map(\.id), ["issue-1", ""], "empty id falls back to title, which is also empty here")
+        XCTAssertEqual(analysis.issues[0].displayTitle, "Flaky test masked the bug")
+        XCTAssertEqual(analysis.issues[1].displayTitle, "prompt", "blank title falls back to the label")
+        XCTAssertEqual(analysis.timeline.map(\.color), ["green", "red"])
+        XCTAssertEqual(analysis.timeline[1].issueID, "issue-1")
+        XCTAssertEqual(analysis.actionItems.map(\.kind), [.repoConfig, .promptImprovement, nil], "unknown type decodes as nil")
+        XCTAssertEqual(analysis.actionItems[2].actionItem, "Something this build has never heard of.")
+        XCTAssertEqual(analysis.suggestedPrompt?.originalPrompt, "Fix the login bug")
+        XCTAssertEqual(analysis.suggestedPrompt?.suggestedPrompt.hasPrefix("Fix the login bug in acme/api"), true)
+        XCTAssertEqual(analysis.suggestedPrompt?.feedbackItems.first?.summary, "Name the base branch")
+    }
+
+    func testSessionInsightsPendingHasNoAnalysis() async throws {
+        transport.stub(json: Fixtures.sessionInsightsPending)
+        let insights = try await client.sessionInsights(org: "org-xyz", id: "devin-abc123")
+        XCTAssertFalse(insights.hasAnalysis)
+        XCTAssertNil(insights.analysis)
+        XCTAssertNil(insights.size, "unknown session_size decodes as nil")
+        XCTAssertEqual(insights.numDevinMessages, 11)
+    }
+
+    func testGenerateInsightsPostsWithoutBody() async throws {
+        transport.stub(json: Fixtures.insightsGenerateStarted)
+        let started = try await client.generateInsights(org: "org-xyz", id: "devin-abc123")
+
+        XCTAssertEqual(transport.lastRequest.httpMethod, "POST")
+        XCTAssertEqual(transport.lastRequest.url?.path, "/v3/organizations/org-xyz/sessions/devin-abc123/insights/generate")
+        XCTAssertNil(transport.lastRequest.url?.query)
+        XCTAssertNil(transport.lastRequest.httpBody)
+        XCTAssertNil(transport.lastRequest.value(forHTTPHeaderField: "Content-Type"))
+        XCTAssertEqual(transport.lastRequest.value(forHTTPHeaderField: "Authorization"), "Bearer cog_test")
+        XCTAssertEqual(started.sessionID, "devin-abc123")
+        XCTAssertEqual(started.status, "started")
+        XCTAssertFalse(started.alreadyExists)
+
+        transport.stub(json: Fixtures.insightsGenerateAlreadyExists)
+        let existing = try await client.generateInsights(org: "org-xyz", id: "devin-abc123")
+        XCTAssertTrue(existing.alreadyExists)
+    }
+
+    func testSessionInsightsForbiddenIsTypedError() async {
+        transport.stub(403, json: Fixtures.problem403Insights)
+        do {
+            _ = try await client.sessionInsights(org: "org-xyz", id: "devin-abc123")
+            XCTFail("expected error")
+        } catch let error as DevinError {
+            XCTAssertEqual(error, .forbidden(ProblemDetail(status: 403, title: "Forbidden", detail: "Missing permission: ViewOrgSessions")))
+            XCTAssertTrue(error.isAuthFailure)
+        } catch {
+            XCTFail("wrong error type: \(error)")
+        }
+    }
+
     // MARK: pr-reviews
 
     private let prURL = URL(string: "https://github.com/acme/api/pull/42")!

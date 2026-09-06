@@ -47,7 +47,8 @@ DevinMobile (SwiftUI, iOS 17, @Observable + @MainActor, no third-party deps)
                 NotificationDelegate (UNUserNotificationCenter delegate, owns the DeepLinkRouter),
                 WidgetTimeline (publishes SessionSnapshot + reloads WidgetKit),
                 SharedDraftFlow (pending SharedDraft → prefilled NewSessionView on activation),
-                SessionLiveActivity (the one pinned Live Activity: start/stop/update/refresh)
+                SessionLiveActivity (the one pinned Live Activity: start/stop/update/refresh),
+                DiagnosticsCollector (MetricKit subscriber → on-device JSON, see §8)
   Features/     Onboarding, Inbox (+ InboxDetailColumn for the iPad split view), SessionDetail (+ SessionDetailModel),
                 NewSession (+ RepoPicker), Settings
   Support/      StatusBadge, PullRequestLink (+ PullRequestStateBadge, ExternalLink),
@@ -207,6 +208,11 @@ Rules of thumb that the existing code follows:
   `SessionDetailView.close()` prefers over `dismiss` (the column root has nothing to pop). Deep links
   use `followsDeepLinks(store:onSession:)` to set the selection. Hardware keyboard: ⌘N new session,
   ⌘R focus the composer, ⌘↩ send (the send button's shortcut, so it obeys `canSend`).
+- **No crash-reporting or analytics SDK, no telemetry.** Crashes and hangs come from Xcode
+  Organizer (Apple's opt-in collection, TestFlight testers included) plus `DiagnosticsCollector`, a
+  MetricKit subscriber that keeps `MXDiagnosticPayload` JSON in the app container — nothing leaves
+  the device. Decision and revisit triggers in §8; the App Store privacy label stays "Data Not
+  Collected" as long as this holds.
 - Swift 5 language mode with `SWIFT_STRICT_CONCURRENCY=complete` — keep things `Sendable`.
 - Comments are sparse by design. Don't document the diff; document the invariant.
 
@@ -440,3 +446,38 @@ Scrum, one-week sprints, tracked on GitHub:
 - **Sprint review** happens on the milestone: everything closed is demoed from a Simulator build;
   anything open rolls to the next milestone with a one-line reason on the issue.
 - **Retro** is a comment on the sprint's tracking issue; changes to conventions land here in §5.
+
+## 8. Decision log
+
+### 8.1 Crash reporting & analytics — MetricKit + Xcode Organizer, no analytics (Sprint 5, #48)
+
+**Decision.** Ship dependency-free: Apple's crash/hang collection viewed in Xcode Organizer, plus an
+in-app MetricKit subscriber (`DiagnosticsCollector`) that persists diagnostic payloads on the device.
+No product analytics, no third-party crash SDK, no upload of anything from the app.
+
+**Options weighed.**
+
+| Option | Verdict |
+| --- | --- |
+| Xcode Organizer only (Crashes, Hangs, Disk Writes, Energy) | Baseline — zero code; only sees users who opted in to "Share with App Developers" (TestFlight testers are opted in by default). Symbolicated automatically when the archive is uploaded with dSYMs. |
+| MetricKit subscriber in-app | Chosen add-on — ~50 lines, same payloads as Organizer (`MXCrashDiagnostic`, `MXHangDiagnostic`, `MXCPUExceptionDiagnostic`, `MXDiskWriteExceptionDiagnostic`) delivered on the next launch regardless of opt-in. Stored as JSON, not uploaded; unsymbolicated call-stack trees, so a dSYM from the matching archive is needed to read them. |
+| Third-party crash SDK (Sentry, Firebase Crashlytics, Bugsnag) | Rejected for now — a dependency (§5 says none without asking), a network endpoint the privacy manifest (#47) would have to declare, and a backend to run. Reconsider only if Organizer proves too slow for the field bugs §3 expects. |
+| Product analytics (TelemetryDeck, Firebase, Mixpanel) | Rejected — a one-user developer tool has nothing to A/B test; usage questions are answered by asking the owner. Adding any means an App Privacy label change and a tracking review. |
+
+**Consequences.**
+
+- `DiagnosticsCollector.install()` runs from `NotificationDelegate.willFinishLaunching`. Payloads
+  land in `Library/Application Support/Diagnostics/<timeStampEnd>-<uuid>.json` (excluded from
+  backup, newest 20 kept). Pull them with Xcode → Devices and Simulators → Download Container, or
+  `xcrun simctl get_app_container booted ai.devin.mobile data` in the Simulator. An in-app "export
+  diagnostics" share sheet is a follow-up if TestFlight testers ever need to send one by hand.
+- Xcode → Debug → Simulate MetricKit Payloads… exercises the collector on Simulator or device.
+- Release builds must keep `DEBUG_INFORMATION_FORMAT=dwarf-with-dsym` (Xcode's default for Release)
+  and upload dSYMs with the archive (#46) so Organizer symbolicates.
+- No privacy-manifest impact: MetricKit is not a required-reason API and the app contacts only
+  `api.devin.ai`. `NSPrivacyTracking` stays `false` and `NSPrivacyCollectedDataTypes` empty in #47.
+
+**Revisit when** (a) the app ships to more than the owner's org and Organizer's opt-in coverage
+is too thin, (b) a relay server exists anyway (§4.5 push), which would make forwarding payloads
+cheap, or (c) a field crash cannot be reproduced from an Organizer log. Any of those → open a
+story on epic #8, and expect the privacy label and manifest to change with it.

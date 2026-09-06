@@ -17,12 +17,13 @@ struct NewSessionView: View {
     @State private var limitACUs = false
     @State private var acuLimit = 10
     @State private var tagsInput = ""
+    @State private var advanced = NewSessionAdvancedOptions()
     @State private var isCreating = false
     @State private var errorMessage: String?
     @FocusState private var promptFocused: Bool
 
     private var canCreate: Bool {
-        !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !isCreating
+        !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !isCreating && advanced.isValid
     }
 
     var body: some View {
@@ -100,6 +101,8 @@ struct NewSessionView: View {
                         .textInputAutocapitalization(.never)
                 }
 
+                NewSessionAdvancedSection(options: $advanced)
+
                 if let errorMessage {
                     Section {
                         Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
@@ -162,7 +165,7 @@ struct NewSessionView: View {
         Task {
             defer { isCreating = false }
             do {
-                let session = try await store.create(request)
+                let session = try await store.create(advanced.applied(to: request))
                 RecentRepos.remember(selectedRepos)
                 dismiss()
                 onCreated(session)

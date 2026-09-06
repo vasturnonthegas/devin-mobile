@@ -74,6 +74,8 @@ struct InboxView: View {
                     SettingsView()
                 }
                 .followsDeepLinks(store: store, path: $path)
+                // On the stack root so a session that flips while its detail is pushed still taps once.
+                .bucketChangeHaptics(for: store.sessions.filter(scope.includes))
         }
         .task { store.startPolling() }
         .task { await scope.resolveIdentity() }
@@ -165,10 +167,12 @@ struct InboxView: View {
                                     .font(.caption2.bold())
                                     .padding(.horizontal, 6)
                                     .padding(.vertical, 2)
-                                    .background(.orange, in: Capsule())
-                                    .foregroundStyle(.white)
+                                    .background(Color.needsYou, in: Capsule())
+                                    .foregroundStyle(Color.onNeedsYou)
+                                    .accessibilityLabel(Text("^[\(group.sessions.count) session](inflect: true)"))
                             }
                         }
+                        .accessibilityElement(children: .combine)
                     }
                 }
                 if store.hasMorePages {
@@ -202,24 +206,29 @@ struct SessionRow: View {
             HStack(alignment: .firstTextBaseline) {
                 Text(session.displayTitle)
                     .font(.body.weight(session.needsAttention ? .semibold : .regular))
-                    .lineLimit(2)
                 Spacer(minLength: 8)
                 Text(session.updatedAt, style: .relative)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
+                    .accessibilityLabel(Text("Updated \(session.updatedAt, style: .relative) ago"))
             }
-            HStack(spacing: 6) {
+            // Wraps instead of squeezing at large Dynamic Type sizes.
+            FlowLayout(spacing: 6) {
                 StatusBadge(session: session)
                 if !session.pullRequests.isEmpty {
                     Label("\(session.pullRequests.count)", systemImage: "arrow.triangle.pull")
+                        .labelStyle(.titleAndIcon)
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                        .accessibilityLabel(Text("^[\(session.pullRequests.count) pull request](inflect: true)"))
                 }
                 if session.hasChildren {
                     Label("\(session.childCount)", systemImage: "arrow.triangle.branch")
+                        .labelStyle(.titleAndIcon)
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                        .accessibilityLabel(Text("^[\(session.childCount) child session](inflect: true)"))
                 }
                 if session.acusConsumed > 0 {
                     Text("\(session.acusConsumed, format: .number.precision(.fractionLength(0...1))) ACU")
@@ -232,8 +241,8 @@ struct SessionRow: View {
                         .padding(.horizontal, 5)
                         .padding(.vertical, 1)
                         .background(.quaternary, in: Capsule())
+                        .accessibilityLabel("\(mode.displayName) mode")
                 }
-                Spacer()
             }
             SessionMetadataLine(session: session, font: .caption2)
             if !session.tags.isEmpty || owner != nil {
@@ -241,8 +250,8 @@ struct SessionRow: View {
                     if !session.tags.isEmpty {
                         Text(session.tags.map { "#\($0)" }.joined(separator: "  "))
                             .font(.caption2)
-                            .foregroundStyle(.tertiary)
-                            .lineLimit(1)
+                            .foregroundStyle(.secondary)
+                            .accessibilityLabel("Tags: \(session.tags.joined(separator: ", "))")
                     }
                     Spacer(minLength: 0)
                     if let owner {
@@ -252,5 +261,7 @@ struct SessionRow: View {
             }
         }
         .padding(.vertical, 2)
+        // One VoiceOver stop per row: title, status, counts, owner — in reading order.
+        .accessibilityElement(children: .combine)
     }
 }

@@ -164,6 +164,20 @@ targets:
         # No App Intents in this target; without this the metadata extractor logs a `warning:` CI would flag.
         LM_SKIP_METADATA_EXTRACTION: YES
 
+  # Accessibility audit (`performAccessibilityAudit`) against `-MockAPI`. Needs a booted simulator,
+  # so CI only compiles the app; run it locally before touching inbox/detail layout.
+  DevinMobileUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: DevinMobileUITests
+    dependencies:
+      - target: DevinMobile
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: ai.devin.mobile.uitests
+        GENERATE_INFOPLIST_FILE: YES
+
 schemes:
   DevinMobile:
     build:
@@ -173,4 +187,5 @@ schemes:
       config: Debug
     test:
       config: Debug
-      targets: []
+      targets:
+        - DevinMobileUITests

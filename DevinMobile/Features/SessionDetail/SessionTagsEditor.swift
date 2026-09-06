@@ -88,10 +88,13 @@ private struct TagChip: View {
     var body: some View {
         HStack(spacing: 4) {
             Text("#\(tag)")
-                .lineLimit(1)
             Button(action: onRemove) {
                 Image(systemName: "xmark")
-                    .font(.system(size: 9, weight: .bold))
+                    .font(.caption2.bold())
+                    .imageScale(.small)
+                    // Keeps the tap target ≥ 24pt (the audit's hit-region floor) without growing the chip.
+                    .frame(minWidth: 24, minHeight: 24)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Remove tag \(tag)")
@@ -99,7 +102,7 @@ private struct TagChip: View {
         .font(.caption)
         .foregroundStyle(.secondary)
         .padding(.horizontal, 10)
-        .padding(.vertical, 5)
+        .padding(.vertical, 2)
         .background(.quaternary, in: Capsule())
         .opacity(isPending ? 0.5 : 1)
     }

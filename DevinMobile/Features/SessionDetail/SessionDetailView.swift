@@ -12,6 +12,7 @@ struct SessionDetailView: View {
     @State private var suggestedPrompt: SuggestedPromptDraft?
     @State private var showRelatedSession = false
     @FocusState private var composerFocused: Bool
+    @ScaledMetric(relativeTo: .body) private var sendButtonSize: CGFloat = 32
 
     init(store: SessionStore, sessionID: String) {
         _model = State(initialValue: SessionDetailModel(store: store, sessionID: sessionID))
@@ -187,12 +188,13 @@ struct SessionDetailView: View {
                     Task { await model.send() }
                 } label: {
                     if model.isSending {
-                        ProgressView().frame(width: 32, height: 32)
+                        ProgressView().frame(width: sendButtonSize, height: sendButtonSize)
                     } else {
                         Image(systemName: "arrow.up.circle.fill")
-                            .font(.system(size: 32))
+                            .font(.system(size: sendButtonSize))
                     }
                 }
+                .accessibilityLabel(model.isSending ? "Sending" : "Send")
                 .disabled(!model.canSend)
                 .sensoryFeedback(.success, trigger: model.isSending) { old, new in old && !new }
             }
@@ -256,7 +258,7 @@ struct MessageBubble: View {
             }
             Text(message.createdAt, style: .time)
                 .font(.caption2)
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: isUser ? .trailing : .leading)
         .padding(isUser ? .leading : .trailing, 40)

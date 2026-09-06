@@ -17,25 +17,17 @@ struct PullRequestReviewRow: View {
                 .font(.subheadline)
 
             if !model.isForbidden {
-                HStack(spacing: 6) {
-                    PRReviewBadge(review: model.review, hasLoaded: model.hasLoaded)
-                    Spacer()
-                    Button {
-                        Task { await model.trigger() }
-                    } label: {
-                        if model.isTriggering {
-                            ProgressView().controlSize(.mini)
-                        } else {
-                            Label(buttonTitle, systemImage: "sparkles")
-                                .labelStyle(.titleAndIcon)
-                        }
+                // Side by side while the status and button fit on one line; stacked at large text sizes.
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 6) {
+                        PRReviewBadge(review: model.review, hasLoaded: model.hasLoaded)
+                        Spacer()
+                        triggerButton
                     }
-                    .font(.caption.weight(.medium))
-                    .buttonStyle(.bordered)
-                    .buttonBorderShape(.capsule)
-                    .controlSize(.mini)
-                    .disabled(!model.canTrigger)
-                    .accessibilityLabel("\(buttonTitle) with Devin Review")
+                    VStack(alignment: .leading, spacing: 6) {
+                        PRReviewBadge(review: model.review, hasLoaded: model.hasLoaded)
+                        triggerButton
+                    }
                 }
                 .padding(.leading, 22)
 
@@ -54,6 +46,25 @@ struct PullRequestReviewRow: View {
     private var buttonTitle: String {
         model.review?.isFinished == true ? "Re-review" : "Review"
     }
+
+    private var triggerButton: some View {
+        Button {
+            Task { await model.trigger() }
+        } label: {
+            if model.isTriggering {
+                ProgressView().controlSize(.mini)
+            } else {
+                Label(buttonTitle, systemImage: "sparkles")
+                    .labelStyle(.titleAndIcon)
+            }
+        }
+        .font(.caption.weight(.medium))
+        .buttonStyle(.bordered)
+        .buttonBorderShape(.capsule)
+        .controlSize(.mini)
+        .disabled(!model.canTrigger)
+        .accessibilityLabel("\(buttonTitle) with Devin Review")
+    }
 }
 
 private struct PRReviewBadge: View {
@@ -70,11 +81,10 @@ private struct PRReviewBadge: View {
             }
             Text(title)
                 .font(.caption)
-                .lineLimit(1)
             if let review {
                 Text(review.shortSHA)
                     .font(.caption2.monospaced())
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(.secondary)
             }
         }
         .foregroundStyle(color)

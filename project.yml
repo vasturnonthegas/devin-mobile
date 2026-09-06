@@ -26,6 +26,7 @@ targets:
       - path: DevinMobile
     dependencies:
       - package: DevinKit
+      - target: DevinWidget
     info:
       path: DevinMobile/Info.plist
       properties:
@@ -64,6 +65,34 @@ targets:
         TARGETED_DEVICE_FAMILY: "1,2"
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+
+  # Home-screen widget. Reads the shared Keychain + `SessionSnapshot` through the same App Group;
+  # never calls the API. Its Info.plist / entitlements are generated here, like the app's.
+  DevinWidget:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: DevinWidget
+    dependencies:
+      - package: DevinKit
+    info:
+      path: DevinWidget/Info.plist
+      properties:
+        CFBundleDisplayName: Devin
+        CFBundleShortVersionString: "0.1.0"
+        CFBundleVersion: "1"
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    entitlements:
+      path: DevinWidget/DevinWidget.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.ai.devin.mobile
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: ai.devin.mobile.widget
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SKIP_INSTALL: YES
 
 schemes:
   DevinMobile:

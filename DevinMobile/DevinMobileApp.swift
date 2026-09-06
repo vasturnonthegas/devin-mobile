@@ -4,7 +4,8 @@ import DevinKit
 @main
 struct DevinMobileApp: App {
     @State private var app = AppModel(store: DevinMobileApp.credentialStore)
-    @State private var router = DeepLinkRouter()
+    // Owns the DeepLinkRouter so notification taps and URL opens land in the same place.
+    @UIApplicationDelegateAdaptor(NotificationDelegate.self) private var notifications
 
     init() {
         #if DEBUG
@@ -24,9 +25,13 @@ struct DevinMobileApp: App {
         WindowGroup {
             RootView()
                 .environment(app)
-                .environment(router)
+                .environment(notifications.router)
                 .task { app.restore() }
-                .onOpenURL { url in router.open(url) }
+                .onOpenURL { url in notifications.router.open(url) }
+                .schedulesBackgroundRefresh(for: app)
+        }
+        .backgroundTask(.appRefresh(BackgroundRefresh.taskIdentifier)) {
+            await BackgroundRefresh.run(credentials: await MainActor.run { DevinMobileApp.credentialStore })
         }
     }
 }

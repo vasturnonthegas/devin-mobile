@@ -92,8 +92,10 @@ enum MockAPI {
         sessions.first(where: { $0.sessionID == id }).map(current)
     }
 
-    /// The catalogue is immutable; `current` overlays the only state the mock tracks (suspended → resuming).
+    /// The catalogue is immutable; `current` overlays the only state the mock tracks (suspended → resuming,
+    /// plus the `-SimulateBackgroundRefresh` status flips).
     static func current(_ session: Session) -> Session {
+        if let changed = simulatedStatusChange(for: session) { return changed }
         guard session.status == .suspended, woken.contains(session.sessionID) else { return session }
         return Session(
             sessionID: session.sessionID, orgID: session.orgID, status: .resuming, statusDetail: nil,

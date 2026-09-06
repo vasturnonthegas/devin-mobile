@@ -93,7 +93,7 @@ struct AttachmentPickerButton: View {
             attachments.error = "Couldn't encode the photo."
             return
         }
-        let thumbnail = await image.byPreparingThumbnail(ofSize: AttachmentThumbnail.pixelSize)
+        let thumbnail = await image.byPreparingThumbnail(ofSize: ComposerThumbnail.pixelSize)
         attachments.add(data: data, filename: "camera-\(Self.stamp()).jpg", mime: "image/jpeg", thumbnail: thumbnail)
     }
 
@@ -102,7 +102,7 @@ struct AttachmentPickerButton: View {
     private func addImage(_ data: Data, type: UTType?, baseName: String) async {
         let passthrough: [UTType] = [.png, .jpeg, .gif]
         let image = UIImage(data: data)
-        let thumbnail = await image?.byPreparingThumbnail(ofSize: AttachmentThumbnail.pixelSize)
+        let thumbnail = await image?.byPreparingThumbnail(ofSize: ComposerThumbnail.pixelSize)
 
         if let type, passthrough.contains(where: { type.conforms(to: $0) }) {
             let ext = type.preferredFilenameExtension ?? "png"
@@ -121,7 +121,7 @@ struct AttachmentPickerButton: View {
     }
 }
 
-enum AttachmentThumbnail {
+enum ComposerThumbnail {
     static let pointSize: CGFloat = 56
     /// Thumbnails are decoded once at 3x so the bar never keeps full-resolution bitmaps alive.
     static let pixelSize = CGSize(width: pointSize * 3, height: pointSize * 3)

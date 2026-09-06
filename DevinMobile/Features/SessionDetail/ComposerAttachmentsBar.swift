@@ -46,7 +46,7 @@ private struct PendingAttachmentCell: View {
     let remove: () -> Void
     let retry: () -> Void
 
-    private let size = AttachmentThumbnail.pointSize
+    private let size = ComposerThumbnail.pointSize
 
     var body: some View {
         VStack(spacing: 3) {

@@ -27,6 +27,7 @@ targets:
     dependencies:
       - package: DevinKit
       - target: DevinWidget
+      - target: DevinIntents
     info:
       path: DevinMobile/Info.plist
       properties:
@@ -91,6 +92,36 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: ai.devin.mobile.widget
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SKIP_INSTALL: YES
+
+  # Siri / Shortcuts. An App Intents extension (ExtensionKit) so intents and App Shortcuts run
+  # without launching the app; it reads credentials from the shared Keychain and calls the API
+  # through DevinKit. Embedded under `Extensions/`, unlike the widget's `PlugIns/`.
+  DevinIntents:
+    type: extensionkit-extension
+    platform: iOS
+    sources:
+      - path: DevinIntents
+    dependencies:
+      - package: DevinKit
+      - sdk: AppIntents.framework
+    info:
+      path: DevinIntents/Info.plist
+      properties:
+        CFBundleDisplayName: Devin
+        CFBundleShortVersionString: "0.1.0"
+        CFBundleVersion: "1"
+        EXAppExtensionAttributes:
+          EXExtensionPointIdentifier: com.apple.appintents-extension
+    entitlements:
+      path: DevinIntents/DevinIntents.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.ai.devin.mobile
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: ai.devin.mobile.intents
         TARGETED_DEVICE_FAMILY: "1,2"
         SKIP_INSTALL: YES
 

@@ -380,6 +380,13 @@ don't crash. `DevinError.forbidden` already exists.
   as *text* on a plain background needs ~4.5:1 — system orange does not pass, use `Color.needsYou`
   (`Color.onNeedsYou` for text on top of it). Prefer `@ScaledMetric` over fixed sizes, and avoid
   `.tertiary` for text.
+- **App identity lives in `project.yml` + `DevinMobile/Assets.xcassets`.** Display name `Devin`, bundle ID
+  `ai.devin.mobile` (the App Group, Keychain group, URL scheme and BG task ID are all derived from it —
+  renaming means migrating stored credentials), `AccentColor` (`#2F5BEA`, dark `#6F8FFF`). The icon PNGs
+  (`AppIcon` light/dark/tinted, 1024 pt single-size — actool derives every device size) and the launch
+  screen's `LaunchGlyph` are rendered by `swift Scripts/make-app-icon.swift`; edit the script, re-run,
+  commit both. Never hand-edit the PNGs. The launch screen is `UILaunchScreen` in `project.yml`
+  (`LaunchBackground` = `systemBackgroundColor`, so it blends into `RootView`).
 - Don't add third-party packages without asking; the app is intentionally dependency-free.
 - Never log tokens. `DevinClient` builds the `Authorization` header in one place — keep it that way.
 - If the OpenAPI spec disagrees with this doc, the spec wins. Re-fetch it at session start.
@@ -390,7 +397,10 @@ don't crash. `DevinError.forbidden` already exists.
    (B1 shipped dependency-free on Foundation's CommonMark parser; revisit only if it falls short.)
 2. Push notifications: OK to run a relay server, or stick with background refresh?
 3. Which org-management screens (4.4) matter on mobile? Suggested: none until 4.1–4.3 + 4.5 ship.
-4. App identity: bundle ID is `ai.devin.mobile` and accent colour is a placeholder; final name/icon?
+4. App identity: shipped as `Devin` / `ai.devin.mobile` with a generated prompt-and-cursor icon and a
+   blue accent (§5). The bundle ID is effectively final (App Group + Keychain depend on it); the artwork
+   and colour are Devin's defaults — swap them by editing `Scripts/make-app-icon.swift` and
+   `AccentColor.colorset` if the owner wants different branding.
 
 ## 7. Process
 

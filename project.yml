@@ -35,7 +35,11 @@ targets:
         CFBundleDisplayName: Devin
         CFBundleShortVersionString: "0.1.0"
         CFBundleVersion: "1"
-        UILaunchScreen: {}
+        # Launch screen = system background + the app icon tile (`Scripts/make-app-icon.swift` renders both
+        # from one mark), so it blends into RootView and matches the home screen in light and dark.
+        UILaunchScreen:
+          UIColorName: LaunchBackground
+          UIImageName: LaunchGlyph
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
         UISupportedInterfaceOrientations~ipad:

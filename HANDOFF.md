@@ -55,8 +55,16 @@ Rules of thumb that the existing code follows:
 - **Member names are in-memory only.** `MemberDirectory` (DevinKit actor) fetches the whole
   members list once per launch and caches `user_id → OrgMember`; a 403 is sticky and the inbox
   simply omits owner chips (shown in Everyone scope only). Nothing about members is persisted.
+- **Wake-on-message.** Per the spec, `POST …/sessions/{id}/messages` "will automatically resume
+  [the session] if suspended" (`suspended → resuming → running`), so the composer stays enabled
+  for every `suspended` session regardless of `status_detail`. `exit` (VM destroyed: terminated or
+  created with `resumable: false`) and `error` sessions cannot receive messages, so the composer is
+  replaced by an explanation. `Session.messaging` (`Session+Messaging.swift`) is the single source
+  of truth; `SessionResponse` has no `resumable` flag, so a disposable session that is still
+  `suspended` looks wakeable until the API rejects the message (409) — that error is shown as-is.
 - **Simulator without a PAT.** Launch with `-MockAPI` (DEBUG only) to run against an in-process
   fake API (`DevinMobile/Support/MockAPI.swift`, 130 sessions) backed by `InMemoryCredentialStore`.
+  `POST …/messages` to a suspended mock session flips it to `resuming`; to an exited one returns 409.
 - **Attachment bytes go through `DevinClient.attachmentData`.** `GET …/sessions/{id}/attachments`
   returns a bare array (not the cursor envelope). Attachment URLs point at the API, which 307s to a
   presigned URL; the client sends the Bearer token only to `baseURL.host` and URLSession drops it on
@@ -131,9 +139,9 @@ truth; the summary below was taken from it).
       tables, links, inline code and fenced code (monospaced, horizontally scrollable, copy button)
       from `AttributedString(markdown:)` `.full` syntax, no dependency. Messages over ~14 lines or
       1 200 characters start collapsed behind "Show more" (`MarkdownDocument.isLong`).
-- [ ] **Wake a sleeping session** — sending a message to a suspended session resumes it (that's what
-      the composer placeholder promises). Verify the API actually does this for `suspended`
-      sessions; if not, hide the composer for non-resumable ones.
+- [x] **Wake a sleeping session** — confirmed against the spec: messaging a `suspended` session
+      resumes it. `Session.messaging` drives the composer (wake hint for `suspended`, replaced by
+      an explanation for `exit`/`error`). Not yet exercised against the live API (no PAT).
 - [ ] **Rename** — web allows editing title. No `PATCH session` exists in v3 as of the last spec
       pull; check again before promising it.
 

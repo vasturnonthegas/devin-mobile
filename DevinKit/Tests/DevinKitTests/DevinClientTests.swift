@@ -375,6 +375,36 @@ final class DevinClientTests: XCTestCase {
         }
     }
 
+    func testMessagingAvailabilityFollowsStatus() async throws {
+        transport.stub(json: Fixtures.sessionsPage)
+        transport.stub(json: Fixtures.sessionsPage2)
+        let live = try await client.sessions(org: "org-xyz").items
+        let ended = try await client.sessions(org: "org-xyz").items
+
+        XCTAssertEqual(live.map(\.messaging), [.active, .active, .wakesSession],
+                       "suspended sessions are woken by POST …/messages, whatever the (possibly unknown) status_detail")
+        XCTAssertTrue(live.allSatisfy(\.messaging.acceptsMessages))
+
+        guard case .unavailable(let exitReason) = ended[0].messaging else { return XCTFail("exit must not accept messages") }
+        XCTAssertFalse(exitReason.isEmpty)
+        guard case .unavailable(let errorReason) = ended[1].messaging else { return XCTFail("error must not accept messages") }
+        XCTAssertFalse(errorReason.isEmpty)
+        XCTAssertFalse(ended.contains { $0.messaging.acceptsMessages })
+    }
+
+    func testSendMessageToEndedSessionSurfacesConflict() async {
+        transport.stub(409, json: Fixtures.problem409SessionEnded)
+        do {
+            try await client.send(message: "wake up", org: "org-xyz", id: "devin-jkl012")
+            XCTFail("expected 409 to throw")
+        } catch let error as DevinError {
+            XCTAssertEqual(error, .http(status: 409, problem: ProblemDetail(status: 409, title: "Conflict", detail: "Session devin-jkl012 has exited and cannot be resumed")))
+            XCTAssertEqual(error.errorDescription, "Session devin-jkl012 has exited and cannot be resumed")
+        } catch {
+            XCTFail("unexpected \(error)")
+        }
+    }
+
     func testAllMessagesFollowsCursor() async throws {
         transport.stub(json: Fixtures.messagesPage1)
         transport.stub(json: Fixtures.messagesPage2)

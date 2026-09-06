@@ -73,6 +73,30 @@ enum Fixtures {
     }
     """
 
+    /// Every PR state the UI models plus a future one and a `null` — both must render neutrally.
+    static let sessionWithPullRequests = """
+    {
+      "session_id": "devin-prs001",
+      "org_id": "org-xyz",
+      "status": "exit",
+      "status_detail": "finished",
+      "title": "Ship B4",
+      "url": "https://app.devin.ai/sessions/prs001",
+      "tags": [],
+      "pull_requests": [
+        {"pr_url": "https://github.com/acme/api/pull/42", "pr_state": "open"},
+        {"pr_url": "https://github.com/acme/api/pull/43", "pr_state": "draft"},
+        {"pr_url": "https://github.com/acme/api/pull/44", "pr_state": "MERGED"},
+        {"pr_url": "https://github.com/acme/api/pull/45", "pr_state": "closed"},
+        {"pr_url": "https://gitlab.com/acme/web/-/merge_requests/9", "pr_state": "locked_by_bot"},
+        {"pr_url": "https://example.com/review/77", "pr_state": null}
+      ],
+      "acus_consumed": 2,
+      "created_at": 1756800000,
+      "updated_at": 1756809000
+    }
+    """
+
     static let sessionParent = """
     {
       "session_id": "devin-parent",

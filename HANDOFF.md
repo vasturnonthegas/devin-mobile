@@ -36,7 +36,8 @@ DevinKit (no UI, platform-agnostic, unit-tested with MockTransport)
 DevinMobile (SwiftUI, iOS 17, @Observable + @MainActor, no third-party deps)
   App/          AppModel (auth state machine), SessionStore (list + polling), RecentRepos
   Features/     Onboarding, Inbox, SessionDetail (+ SessionDetailModel), NewSession, Settings
-  Support/      StatusBadge, PullRequestLink, Markdown/ (MarkdownDocument block tree + MarkdownView)
+  Support/      StatusBadge, PullRequestLink (+ PullRequestStateBadge, ExternalLink),
+                Markdown/ (MarkdownDocument block tree + MarkdownView)
 ```
 
 Rules of thumb that the existing code follows:
@@ -75,7 +76,8 @@ session-only vs saved secret) and:
    path kicks in; verify that flow too.
 2. Inbox → check every session decodes. Likely soft spots: `created_at`/`updated_at` are epoch
    **integers** (seconds) per the OpenAPI spec; the decoder accepts seconds or ISO-8601 — confirm
-   the values aren't milliseconds. Check `pull_requests[].pr_state` values against `PullRequestLink`.
+   the values aren't milliseconds. Check `pull_requests[].pr_state` values against `PullRequestState`
+   (unknown strings render as a neutral badge, so nothing breaks — but add new cases if the API grows).
 3. Detail → transcript order, markdown rendering (`MarkdownView` regroups Foundation's `.full`
    CommonMark parse by `presentationIntent`; check real Devin messages for constructs it flattens).
 4. Reply to a waiting session, archive one, terminate one, create one.
@@ -122,8 +124,8 @@ truth; the summary below was taken from it).
 - [ ] **Session insights** — `GET …/sessions/{id}/insights` (+ `POST …/insights/generate`):
       issues, timeline, action items, suggested prompt. Web shows this as a summary panel.
       "Suggested prompt → start new session" is a nice one-tap flow.
-- [ ] **Pull request states** — poll `pull_requests[].pr_state`; show merged/closed badges;
-      deep-link to GitHub app if installed.
+- [x] **Pull request states** — `PullRequestState` typed from `pr_state`, badges via
+      `PullRequestStateBadge`; `ExternalLink.open` prefers the Universal-Link app (GitHub) over Safari.
 - [ ] **Devin Review** — `POST/GET …/pr-reviews` to trigger/see review status for a PR URL.
 - [x] **Better transcript rendering** — `MarkdownMessageBody` renders headings, lists, quotes,
       tables, links, inline code and fenced code (monospaced, horizontally scrollable, copy button)

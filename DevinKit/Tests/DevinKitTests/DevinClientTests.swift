@@ -220,6 +220,78 @@ final class DevinClientTests: XCTestCase {
         XCTAssertTrue(second.queryItems!.contains(URLQueryItem(name: "after", value: "c1")))
     }
 
+    func testListAttachmentsDecodesSpecArray() async throws {
+        transport.stub(json: Fixtures.attachmentsArray)
+
+        let attachments = try await client.attachments(org: "org-xyz", id: "devin-abc123")
+
+        XCTAssertEqual(transport.lastRequest.httpMethod, "GET")
+        XCTAssertEqual(transport.lastRequest.url?.path, "/v3/organizations/org-xyz/sessions/devin-abc123/attachments")
+        XCTAssertEqual(transport.lastRequest.value(forHTTPHeaderField: "Authorization"), "Bearer cog_test")
+
+        XCTAssertEqual(attachments.map(\.id), ["att-1", "att-2", "att-3", "att-4"])
+        XCTAssertEqual(attachments[0].source, .user)
+        XCTAssertEqual(attachments[0].contentType, "image/png")
+        XCTAssertNil(attachments[1].contentType)
+        XCTAssertEqual(attachments[1].source, .devin)
+    }
+
+    func testListAttachmentsToleratesPageEnvelope() async throws {
+        transport.stub(json: Fixtures.attachmentsPage)
+        let attachments = try await client.attachments(org: "org-xyz", id: "devin-abc123")
+        XCTAssertEqual(attachments.count, 4)
+    }
+
+    func testAttachmentKindFromContentTypeOrExtension() async throws {
+        transport.stub(json: Fixtures.attachmentsArray)
+        let attachments = try await client.attachments(org: "org-xyz", id: "devin-abc123")
+
+        XCTAssertTrue(attachments[0].isImage, "image/png")
+        XCTAssertFalse(attachments[1].isImage, "no content type, .log extension")
+        XCTAssertTrue(attachments[2].isImage, "octet-stream falls back to the .HEIC extension")
+        XCTAssertEqual(attachments[2].fileExtension, "heic")
+        XCTAssertFalse(attachments[3].isImage, "unknown non-image type")
+        XCTAssertEqual(attachments[3].fileExtension, "bin", "extension falls back to the URL when the name has none")
+    }
+
+    func testAttachmentDataSendsBearerToAPIHostOnly() async throws {
+        transport.stub(json: Fixtures.attachmentsArray)
+        let attachments = try await client.attachments(org: "org-xyz", id: "devin-abc123")
+
+        transport.stub(json: "PNGBYTES")
+        let data = try await client.attachmentData(attachments[0])
+        XCTAssertEqual(data, Data("PNGBYTES".utf8))
+        XCTAssertEqual(transport.lastRequest.url?.absoluteString,
+                       "https://api.devin.ai/v3/organizations/org-xyz/attachments/0f3c-uuid/screenshot.png")
+        XCTAssertEqual(transport.lastRequest.value(forHTTPHeaderField: "Authorization"), "Bearer cog_test")
+        XCTAssertEqual(transport.lastRequest.value(forHTTPHeaderField: "Accept"), "*/*")
+
+        transport.stub(json: "HEIC")
+        _ = try await client.attachmentData(attachments[2])
+        XCTAssertEqual(transport.lastRequest.url?.absoluteString,
+                       "https://api.devin.ai/v3/organizations/org-xyz/attachments/77e2-uuid/photo.HEIC",
+                       "relative URLs resolve against the base URL")
+        XCTAssertEqual(transport.lastRequest.value(forHTTPHeaderField: "Authorization"), "Bearer cog_test")
+
+        transport.stub(json: "BIN")
+        _ = try await client.attachmentData(attachments[3])
+        XCTAssertEqual(transport.lastRequest.url?.absoluteString, "https://cdn.example.com/design.bin")
+        XCTAssertNil(transport.lastRequest.value(forHTTPHeaderField: "Authorization"), "token never leaves the API host")
+    }
+
+    func testAttachmentDataMapsErrors() async throws {
+        transport.stub(json: Fixtures.attachmentsArray)
+        let attachments = try await client.attachments(org: "org-xyz", id: "devin-abc123")
+
+        transport.stub(404, json: #"{"status": 404, "title": "Not Found", "detail": "gone"}"#)
+        do {
+            _ = try await client.attachmentData(attachments[1])
+            XCTFail("expected notFound")
+        } catch DevinError.notFound(let problem) {
+            XCTAssertEqual(problem?.detail, "gone")
+        }
+    }
+
     func testListArchivedSessions() async throws {
         transport.stub(json: Fixtures.archivedSessionsPage)
 

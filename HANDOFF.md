@@ -56,6 +56,11 @@ Rules of thumb that the existing code follows:
   simply omits owner chips (shown in Everyone scope only). Nothing about members is persisted.
 - **Simulator without a PAT.** Launch with `-MockAPI` (DEBUG only) to run against an in-process
   fake API (`DevinMobile/Support/MockAPI.swift`, 130 sessions) backed by `InMemoryCredentialStore`.
+- **Attachment bytes go through `DevinClient.attachmentData`.** `GET …/sessions/{id}/attachments`
+  returns a bare array (not the cursor envelope). Attachment URLs point at the API, which 307s to a
+  presigned URL; the client sends the Bearer token only to `baseURL.host` and URLSession drops it on
+  the redirect. Never hand an attachment URL to `AsyncImage`/`Link` — it would 401 or leak the token.
+  Downloads are cached per `SessionDetailView` (`SessionAttachmentsModel`) and files land in `tmp/`.
 - **Credentials only in Keychain** (`ai.devin.mobile` / `credentials`). Nothing is stored until
   `GET /v3/self` + `GET /sessions?first=1` both succeed.
 - Swift 5 language mode with `SWIFT_STRICT_CONCURRENCY=complete` — keep things `Sendable`.
@@ -105,8 +110,10 @@ truth; the summary below was taken from it).
 
 ### 4.2 Session detail parity
 
-- [ ] **Attachments** — list (`GET …/sessions/{id}/attachments`, already in `DevinClient`) and
-      render images inline / QuickLook for others. Upload from Photos/Files/camera via
+- [x] **Attachments (view)** — listed per session; images inline (tap → full-screen zoom/share),
+      other files open in QuickLook. Attachments are pinned under the first message quoting their
+      URL, otherwise shown in the header card.
+- [ ] **Attachments (upload)** — from Photos/Files/camera via
       `POST …/attachments` (multipart `file`) then pass `attachment_urls` to
       `POST …/messages` or to session creation. This is the most mobile-native win
       ("send Devin a screenshot of the bug").

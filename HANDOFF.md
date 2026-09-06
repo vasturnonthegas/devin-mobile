@@ -30,7 +30,8 @@ Sign in with a PAT (`cog_…`, Devin → Settings → Devin API). Enterprise PAT
 ```
 DevinKit (no UI, platform-agnostic, unit-tested with MockTransport)
   Client/   DevinClient (async/await, Bearer, RFC 9457 → DevinError), HTTPTransport (injectable)
-  Models/   Session, SessionMessage, Playbook, Principal, Repository, Page<T>, NewSessionRequest/SessionQuery/RepositoryQuery, JSONValue
+  Models/   Session, SessionMessage, Playbook, Principal, Repository, Page<T>, NewSessionRequest/SessionQuery/RepositoryQuery, JSONValue,
+            KnowledgeNote/KnowledgeFolder(Tree), OrgSecret (metadata only)
   Storage/  CredentialStore protocol; KeychainCredentialStore (iOS), InMemoryCredentialStore (tests/previews)
   Sharing/  AppGroup (ids shared with extensions), DeepLink (devinmobile:// URLs), SessionSnapshot (last-known buckets,
             + `changes(since:)` bucket diff),
@@ -95,6 +96,10 @@ Rules of thumb that the existing code follows:
   presigned URL; the client sends the Bearer token only to `baseURL.host` and URLSession drops it on
   the redirect. Never hand an attachment URL to `AsyncImage`/`Link` — it would 401 or leak the token.
   Downloads are cached per `SessionDetailView` (`SessionAttachmentsModel`) and files land in `tmp/`.
+- **Secrets are metadata only.** `GET …/secrets` never returns values and `OrgSecret` has no field
+  for one; pickers render `key`/`note`/type. `SessionResourcesModel` loads notes + secrets once per
+  New Session sheet and a 403 on either endpoint hides that list (both → the section disappears).
+  `-MockForbidKnowledge` / `-MockForbidSecrets` (with `-MockAPI`) exercise those paths.
 - **Credentials only in Keychain** (`ai.devin.mobile` / `credentials`). Nothing is stored until
   `GET /v3/self` + `GET /sessions?first=1` both succeed.
 - **One App Group, `group.ai.devin.mobile`, is the only shared identifier** (`AppGroup.identifier`).
@@ -216,8 +221,9 @@ truth; the summary below was taken from it).
       `load_indexing_status=false`). Multi-select, debounced server search, cursor pagination,
       recents pinned on top, typed `owner/repo` fallback. Not yet exercised against the live API
       (no PAT) — verify the `repo_path` shape and that `repos` accepts `Repository.fullPath`.
-- [ ] **Knowledge & secrets attach** — `knowledge_ids` (`GET …/knowledge/notes`,
-      `…/knowledge/folders`) and `secret_ids` (`GET …/secrets`) on `SessionCreateRequest`.
+- [x] **Knowledge & secrets attach** — `knowledge_ids` (`GET …/knowledge/notes`,
+      `…/knowledge/folders`) and `secret_ids` (`GET …/secrets`) on `NewSessionRequest`; searchable
+      multi-select pickers (`KnowledgeNotePickerView`, `SecretPickerView`) grouped by folder.
 - [x] **Structured output schema** — `structured_output_schema` text field (advanced section).
       `StructuredOutputSchema.parse` (DevinKit) enforces the spec's constraints — JSON object,
       ≤ 64 KB, no external `$ref` — and its error blocks Start with a message under the field.

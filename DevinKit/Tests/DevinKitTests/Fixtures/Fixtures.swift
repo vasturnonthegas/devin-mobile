@@ -535,4 +535,80 @@ enum Fixtures {
     static let problem403Repositories = """
     {"status": 403, "title": "Forbidden", "detail": "Missing permission: ViewOrgRepositories", "type": "about:blank"}
     """
+
+    static let knowledgeNotesPage1 = """
+    {
+      "items": [
+        {"note_id": "note-ci001", "folder_id": "folder-eng", "folder_path": "Engineering/CI", "name": "CI conventions",
+         "body": "Always run swift test before pushing.", "trigger": "When touching CI or GitHub Actions",
+         "is_enabled": true, "created_at": 1756800000, "updated_at": 1756803600, "access_type": "org",
+         "org_id": "org-xyz", "macro": "!ci", "pinned_repo": "github.com/acme/api"},
+        {"note_id": "note-root002", "folder_id": null, "folder_path": "", "name": "Code style",
+         "body": "Four spaces, no tabs.", "trigger": "Always", "is_enabled": false, "created_at": 1756700000,
+         "updated_at": 1756700000, "access_type": "enterprise", "org_id": null, "macro": null, "pinned_repo": null},
+        {"note_id": "note-odd003", "folder_id": "folder-eng", "folder_path": "Engineering", "name": "Déploiement",
+         "body": "", "trigger": "", "is_enabled": true, "created_at": 1756600000, "updated_at": 1756600000,
+         "access_type": "galactic", "org_id": "org-xyz", "macro": null, "pinned_repo": null, "future_field": {"x": 1}}
+      ],
+      "end_cursor": "notes-cursor-2",
+      "has_next_page": true,
+      "total": 4
+    }
+    """
+
+    static let knowledgeNotesPage2 = """
+    {
+      "items": [
+        {"note_id": "note-web004", "folder_id": "folder-web", "folder_path": "Web", "name": "Frontend testing",
+         "body": "Use Playwright.", "trigger": "When editing web/", "is_enabled": true, "created_at": 1756500000,
+         "updated_at": 1756500000, "access_type": "org", "org_id": "org-xyz", "macro": null, "pinned_repo": "github.com/acme/web"}
+      ],
+      "end_cursor": null,
+      "has_next_page": false
+    }
+    """
+
+    static let knowledgeFolders = """
+    {
+      "folders": [
+        {"folder_id": "folder-eng", "name": "Engineering", "parent_folder_id": null, "path": "Engineering", "note_count": 1},
+        {"folder_id": "folder-ci", "name": "CI", "parent_folder_id": "folder-eng", "path": "Engineering/CI", "note_count": 1},
+        {"folder_id": "folder-web", "name": "Web", "path": "Web", "note_count": 1}
+      ],
+      "root_note_count": 1
+    }
+    """
+
+    static let secretsPage = """
+    {
+      "items": [
+        {"secret_id": "secret-npm001", "key": "NPM_TOKEN", "note": "Publish token for @acme", "is_sensitive": true,
+         "created_by": "user-1", "created_at": 1756800000, "secret_type": "key-value", "access_type": "org",
+         "updated_at": 1756803600, "updated_by": "user-2"},
+        {"secret_id": "secret-gh002", "key": null, "note": "GitHub session cookie", "is_sensitive": true,
+         "created_by": "user-1", "created_at": 1756700000, "secret_type": "cookie", "access_type": "personal",
+         "updated_at": null, "updated_by": null},
+        {"secret_id": "secret-odd003", "key": "VAULT_ROLE", "note": null, "is_sensitive": false,
+         "created_by": "user-3", "created_at": 1756600000, "secret_type": "hardware-token", "access_type": "team"}
+      ],
+      "end_cursor": null,
+      "has_next_page": false,
+      "total": 3
+    }
+    """
+
+    static let secretsPage1 = """
+    {
+      "items": [
+        {"secret_id": "secret-aws000", "key": "AWS_ACCESS_KEY_ID", "note": null, "is_sensitive": true,
+         "created_by": "user-1", "created_at": 1756900000, "secret_type": "key-value", "access_type": "org"}
+      ],
+      "end_cursor": "secrets-cursor-2",
+      "has_next_page": true
+    }
+    """
+
+    static let problem403Knowledge = """
+    {"status": 403, "title": "Forbidden", "detail": "Missing permission: ViewOrgKnowledge", "type": "about:blank"}
+    """
 }

@@ -18,6 +18,8 @@ struct NewSessionView: View {
     @State private var acuLimit = 10
     @State private var tagsInput = ""
     @State private var advanced = NewSessionAdvancedOptions()
+    @State private var knowledgeIDs: Set<String> = []
+    @State private var secretIDs: Set<String> = []
     @State private var isCreating = false
     @State private var errorMessage: String?
     @FocusState private var promptFocused: Bool
@@ -96,6 +98,8 @@ struct NewSessionView: View {
                         .textInputAutocapitalization(.never)
                 }
 
+                SessionResourcesSection(store: store, knowledgeIDs: $knowledgeIDs, secretIDs: $secretIDs)
+
                 NewSessionAdvancedSection(options: $advanced)
 
                 if let errorMessage {
@@ -152,7 +156,9 @@ struct NewSessionView: View {
             playbookID: playbookID,
             devinMode: mode == .normal ? nil : mode,
             maxACULimit: limitACUs ? acuLimit : nil,
-            tags: tags.isEmpty ? nil : tags
+            tags: tags.isEmpty ? nil : tags,
+            knowledgeIDs: knowledgeIDs.isEmpty ? nil : knowledgeIDs.sorted(),
+            secretIDs: secretIDs.isEmpty ? nil : secretIDs.sorted()
         )
 
         Task {

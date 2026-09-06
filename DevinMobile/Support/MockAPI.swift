@@ -310,6 +310,9 @@ final class MockAPIProtocol: URLProtocol, @unchecked Sendable {
             if parts.count == 4 { return (200, MockAPI.playbooksJSON()) }
             return MockAPI.playbookJSON(id: parts[4]).map { (200, $0) } ?? notFound()
         }
+        if let reply = MockAPI.knowledgeResponse(method: method, parts: parts, url: url) {
+            return reply
+        }
         // Everything else is /v3/organizations/{org}/sessions[/{id}[/{sub}]]
         guard parts.count >= 4, parts[0] == "v3", parts[1] == "organizations", parts[3] == "sessions" else { return notFound() }
         let id = parts.count > 4 ? parts[4] : nil

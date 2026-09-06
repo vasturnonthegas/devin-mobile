@@ -38,9 +38,12 @@ struct StartDevinSessionIntent: AppIntent {
 
         let devin = try SignedInDevin.current()
         let session = SessionEntity(try await devin.createSession(NewSessionRequest(prompt: prompt, repos: repos)))
-        let dialog: IntentDialog = repos == nil
-            ? "Started “\(session.title)”. Devin is on it."
-            : "Started “\(session.title)” in \(repos?.first ?? ""). Devin is on it."
+        let dialog: IntentDialog
+        if let repo = repos?.first {
+            dialog = IntentDialog("Started “\(session.title)” in \(repo). Devin is on it.")
+        } else {
+            dialog = IntentDialog("Started “\(session.title)”. Devin is on it.")
+        }
         return .result(value: session, dialog: dialog)
     }
 }

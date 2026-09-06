@@ -38,8 +38,9 @@ struct ReplyToDevinIntent: AppIntent {
         }
 
         try await devin.send(message, to: current.id)
-        return .result(dialog: wakes
-            ? "Sent. “\(title)” was asleep, so your message is waking it up."
-            : "Sent to “\(title)”.")
+        let dialog: IntentDialog = wakes
+            ? IntentDialog("Sent. “\(title)” was asleep, so your message is waking it up.")
+            : IntentDialog("Sent to “\(title)”.")
+        return .result(dialog: dialog)
     }
 }

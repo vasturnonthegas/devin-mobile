@@ -19,7 +19,7 @@ struct WhatIsDevinWaitingOnIntent: AppIntent {
         let dialog: IntentDialog
         do {
             snapshot = try await devin.refreshSnapshot()
-            dialog = "\(snapshot.spokenSummary)"
+            dialog = IntentDialog("\(snapshot.spokenSummary)")
         } catch let error as DevinIntentError {
             // Only transport/server failures fall back; a rejected token must be heard.
             guard case .request = error, let saved = SessionSnapshot.load() else { throw error }
@@ -27,7 +27,7 @@ struct WhatIsDevinWaitingOnIntent: AppIntent {
             let formatter = RelativeDateTimeFormatter()
             formatter.unitsStyle = .full
             let age = formatter.localizedString(for: saved.capturedAt, relativeTo: .now)
-            dialog = "I couldn't reach Devin, so this is from \(age). \(saved.spokenSummary)"
+            dialog = IntentDialog("I couldn't reach Devin, so this is from \(age). \(saved.spokenSummary)")
         }
         return .result(value: snapshot.entries(in: .needsYou).map(SessionEntity.init), dialog: dialog)
     }

@@ -117,7 +117,9 @@ truth; the summary below was taken from it).
       "Suggested prompt → start new session" is a nice one-tap flow.
 - [ ] **Pull request states** — poll `pull_requests[].pr_state`; show merged/closed badges;
       deep-link to GitHub app if installed.
-- [ ] **Devin Review** — `POST/GET …/pr-reviews` to trigger/see review status for a PR URL.
+- [x] **Devin Review** — `POST/GET …/pr-reviews` to trigger/see review status for a PR URL.
+      `PullRequestReviewRow` polls `pollPRReview` (pinned to the returned `commit_sha`) until a
+      terminal status; 404 = "not reviewed", 403 hides the row's controls.
 - [ ] **Better transcript rendering** — replace `LocalizedStringKey` markdown with a proper
       renderer (AttributedString(markdown:) with `.full` syntax, or a small dependency such as
       `swift-markdown-ui` if a dependency is acceptable — ask). Code blocks need monospaced,

@@ -308,6 +308,126 @@ final class DevinClientTests: XCTestCase {
         XCTAssertEqual(SessionTags.maxCount, 50)
     }
 
+    // MARK: pr-reviews
+
+    private let prURL = URL(string: "https://github.com/acme/api/pull/42")!
+
+    func testRequestPRReviewPostsURL() async throws {
+        transport.stub(json: Fixtures.prReviewPending)
+        let review = try await client.requestPRReview(org: "org-xyz", prURL: prURL)
+
+        XCTAssertEqual(transport.lastRequest.httpMethod, "POST")
+        XCTAssertEqual(transport.lastRequest.url?.path, "/v3/organizations/org-xyz/pr-reviews")
+        XCTAssertNil(transport.lastRequest.url?.query)
+        XCTAssertEqual(transport.lastRequest.value(forHTTPHeaderField: "Authorization"), "Bearer cog_test")
+        XCTAssertEqual(transport.lastRequest.value(forHTTPHeaderField: "Content-Type"), "application/json")
+        XCTAssertEqual(transport.lastRequest.bodyJSON["pr_url"] as? String, "https://github.com/acme/api/pull/42")
+        XCTAssertEqual(transport.lastRequest.bodyJSON.count, 1)
+
+        XCTAssertEqual(review.status, .pending)
+        XCTAssertFalse(review.isFinished)
+        XCTAssertEqual(review.repoPath, "github.com/acme/api")
+        XCTAssertEqual(review.prNumber, 42)
+        XCTAssertEqual(review.shortSHA, "abc123d")
+        XCTAssertEqual(review.createdAt, Date(timeIntervalSince1970: 1_788_343_200), "created_at is an ISO-8601 string here")
+        XCTAssertEqual(review.statusSummary, "Queued")
+    }
+
+    func testPRReviewBuildsQuery() async throws {
+        transport.stub(json: Fixtures.prReviewCompleted)
+        let review = try await client.prReview(org: "org-xyz", prURL: prURL, commitSHA: "abc123d")
+
+        XCTAssertEqual(transport.lastRequest.httpMethod, "GET")
+        XCTAssertNil(transport.lastRequest.httpBody)
+        let url = transport.lastRequest.url!
+        XCTAssertEqual(url.path, "/v3/organizations/org-xyz/pr-reviews")
+        let items = URLComponents(url: url, resolvingAgainstBaseURL: false)!.queryItems!
+        XCTAssertEqual(items, [
+            URLQueryItem(name: "pr_url", value: "https://github.com/acme/api/pull/42"),
+            URLQueryItem(name: "commit_sha", value: "abc123d"),
+        ])
+        XCTAssertEqual(review.status, .completed)
+        XCTAssertTrue(review.isFinished)
+
+        transport.stub(json: Fixtures.prReviewCompleted)
+        _ = try await client.prReview(org: "org-xyz", prURL: prURL)
+        let second = URLComponents(url: transport.lastRequest.url!, resolvingAgainstBaseURL: false)!.queryItems!
+        XCTAssertFalse(second.contains { $0.name == "commit_sha" }, "nil commit_sha is omitted so the server resolves the head")
+    }
+
+    func testLatestPRReviewFoldsNotFoundIntoNil() async throws {
+        transport.stub(404, json: Fixtures.problem404PRReview)
+        let none = try await client.latestPRReview(org: "org-xyz", prURL: prURL)
+        XCTAssertNil(none)
+
+        transport.stub(403, json: Fixtures.problem403)
+        do {
+            _ = try await client.latestPRReview(org: "org-xyz", prURL: prURL)
+            XCTFail("403 must still surface")
+        } catch let error as DevinError {
+            guard case .forbidden = error else { return XCTFail("expected forbidden, got \(error)") }
+        }
+    }
+
+    func testPRReviewUnknownStatusDecodesAsNilButKeepsRaw() async throws {
+        transport.stub(json: Fixtures.prReviewUnknownStatus)
+        let review = try await client.prReview(org: "org-xyz", prURL: prURL)
+        XCTAssertNil(review.status)
+        XCTAssertEqual(review.rawStatus, "brand_new_status")
+        XCTAssertFalse(review.isFinished, "unknown statuses keep polling until maxPolls")
+        XCTAssertEqual(review.statusSummary, "Brand New Status")
+        XCTAssertEqual(review.createdAt, Date(timeIntervalSince1970: 1_788_343_200.25))
+    }
+
+    func testPollPRReviewStopsAtTerminalStatus() async throws {
+        transport.stub(json: Fixtures.prReviewPending)
+        transport.stub(json: Fixtures.prReviewRunning)
+        transport.stub(json: Fixtures.prReviewCompleted)
+        transport.stub(json: Fixtures.prReviewCompleted) // must never be consumed
+
+        var seen: [PRReviewStatus?] = []
+        for try await review in client.pollPRReview(org: "org-xyz", prURL: prURL, commitSHA: "abc123d", every: .milliseconds(1)) {
+            seen.append(review.status)
+        }
+
+        XCTAssertEqual(seen, [.pending, .running, .completed])
+        XCTAssertEqual(transport.requests.count, 3)
+        for request in transport.requests {
+            let items = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)!.queryItems!
+            XCTAssertTrue(items.contains(URLQueryItem(name: "commit_sha", value: "abc123d")), "every poll pins the same commit")
+        }
+    }
+
+    func testPollPRReviewGivesUpAfterMaxPolls() async throws {
+        for _ in 0..<5 { transport.stub(json: Fixtures.prReviewRunning) }
+
+        var count = 0
+        for try await _ in client.pollPRReview(org: "org-xyz", prURL: prURL, every: .milliseconds(1), maxPolls: 3) {
+            count += 1
+        }
+
+        XCTAssertEqual(count, 3)
+        XCTAssertEqual(transport.requests.count, 3)
+    }
+
+    func testPollPRReviewPropagatesErrors() async {
+        transport.stub(json: Fixtures.prReviewPending)
+        transport.stub(429, json: "{}", headers: ["Retry-After": "3"])
+
+        var seen: [PRReviewStatus?] = []
+        do {
+            for try await review in client.pollPRReview(org: "org-xyz", prURL: prURL, every: .milliseconds(1)) {
+                seen.append(review.status)
+            }
+            XCTFail("expected error")
+        } catch let error as DevinError {
+            XCTAssertEqual(error, .rateLimited(retryAfter: 3))
+        } catch {
+            XCTFail("wrong error type: \(error)")
+        }
+        XCTAssertEqual(seen, [.pending], "snapshots before the failure are still delivered")
+    }
+
     func testMeDecodesOrg() async throws {
         transport.stub(json: Fixtures.selfPAT)
         let me = try await client.me()

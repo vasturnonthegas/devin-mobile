@@ -14,6 +14,7 @@ struct NewSessionView: View {
     @State private var mode: DevinMode = .normal
     @State private var playbooks: [Playbook] = []
     @State private var playbookID: String?
+    @State private var previewingPlaybook: PlaybookPreviewTarget?
     @State private var limitACUs = false
     @State private var acuLimit = 10
     @State private var tagsInput = ""
@@ -91,6 +92,13 @@ struct NewSessionView: View {
                                 Text(playbook.title).tag(Optional(playbook.playbookID))
                             }
                         }
+                        if let playbookID {
+                            Button {
+                                previewingPlaybook = PlaybookPreviewTarget(id: playbookID)
+                            } label: {
+                                Label("Preview playbook", systemImage: "doc.text.magnifyingglass")
+                            }
+                        }
                     }
                     Toggle("Cap ACUs", isOn: $limitACUs.animation())
                     if limitACUs {
@@ -125,6 +133,9 @@ struct NewSessionView: View {
                 }
             }
             .task { await loadPlaybooks() }
+            .sheet(item: $previewingPlaybook) { target in
+                PlaybookPreviewSheet(store: store, playbookID: target.id)
+            }
             .onAppear { promptFocused = true }
             .interactiveDismissDisabled(!prompt.isEmpty)
         }

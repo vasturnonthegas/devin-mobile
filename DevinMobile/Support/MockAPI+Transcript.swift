@@ -3,11 +3,12 @@ import Foundation
 import DevinKit
 
 /// Transcript served by `MockAPI` for `GET …/sessions/{id}/messages`. Exercises every markdown
-/// construct the transcript renderer supports, plus one message long enough to collapse.
+/// construct the transcript renderer supports, plus one message long enough to collapse, followed
+/// by the attachment-quoting messages from `MockAPI+Attachments.swift`.
 extension MockAPI {
     static func messages(for sessionID: String) -> [SessionMessage] {
         let start = Date(timeIntervalSince1970: 1_756_890_000)
-        return transcript.enumerated().map { index, entry in
+        let markdown = transcript.enumerated().map { index, entry in
             SessionMessage(
                 eventID: "\(sessionID)-msg\(index)",
                 source: entry.source,
@@ -15,6 +16,8 @@ extension MockAPI {
                 createdAt: start.addingTimeInterval(Double(index) * 95)
             )
         }
+        let next = start.addingTimeInterval(Double(transcript.count) * 95)
+        return markdown + attachmentMessages(for: sessionID, startingAt: next)
     }
 
     private static let transcript: [(source: MessageSource, text: String)] = [

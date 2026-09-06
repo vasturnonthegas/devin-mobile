@@ -159,6 +159,9 @@ final class MockAPIProtocol: URLProtocol, @unchecked Sendable {
             guard let review = MockAPI.reviews.latest(prURL) else { return notFound() }
             return encode(review)
         }
+        if method == "GET", parts.count == 6, parts[0] == "v3", parts[3] == "attachments" {
+            return MockAPI.attachmentBody(uuid: parts[4], name: parts[5]).map { (200, $0) } ?? notFound()
+        }
         // Everything else is /v3/organizations/{org}/sessions[/{id}[/{sub}]]
         guard parts.count >= 4, parts[0] == "v3", parts[1] == "organizations", parts[3] == "sessions" else { return notFound() }
         let id = parts.count > 4 ? parts[4] : nil
@@ -184,8 +187,8 @@ final class MockAPIProtocol: URLProtocol, @unchecked Sendable {
         case ("GET", let id?, "messages"):
             return encode(Page(items: MockAPI.messages(for: id)))
 
-        case ("GET", _?, "attachments"):
-            return encode(Page<SessionAttachment>(items: []))
+        case ("GET", let id?, "attachments"):
+            return (200, MockAPI.attachmentsJSON(for: id))
 
         default:
             return notFound()

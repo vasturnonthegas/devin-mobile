@@ -4,6 +4,7 @@ import DevinKit
 
 struct SessionDetailView: View {
     @State private var model: SessionDetailModel
+    @State private var attachments: SessionAttachmentsModel
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
 
@@ -12,6 +13,7 @@ struct SessionDetailView: View {
 
     init(store: SessionStore, sessionID: String) {
         _model = State(initialValue: SessionDetailModel(store: store, sessionID: sessionID))
+        _attachments = State(initialValue: SessionAttachmentsModel(store: store, sessionID: sessionID))
     }
 
     var body: some View {
@@ -42,9 +44,10 @@ struct SessionDetailView: View {
     // MARK: Transcript
 
     private func transcript(for session: Session) -> some View {
-        ScrollView {
+        let placed = attachments.placement(in: model.messages)
+        return ScrollView {
             LazyVStack(alignment: .leading, spacing: 12) {
-                header(for: session)
+                header(for: session, attachments: placed.unplaced)
                     .padding(.bottom, 4)
 
                 if model.isLoadingTranscript {
@@ -56,7 +59,7 @@ struct SessionDetailView: View {
                 }
 
                 ForEach(model.messages) { message in
-                    MessageBubble(message: message)
+                    MessageBubble(message: message, attachments: placed.byMessage[message.id] ?? [], attachmentsModel: attachments)
                 }
 
                 if let error = model.error {
@@ -69,9 +72,11 @@ struct SessionDetailView: View {
         }
         .defaultScrollAnchor(.bottom)
         .scrollDismissesKeyboard(.interactively)
+        // Attachments arrive with messages, so a transcript change is the cue to re-list them.
+        .task(id: model.messages.count) { await attachments.load() }
     }
 
-    private func header(for session: Session) -> some View {
+    private func header(for session: Session, attachments unplaced: [SessionAttachment]) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 StatusBadge(session: session)
@@ -104,6 +109,10 @@ struct SessionDetailView: View {
             SessionMetadataLine(session: session)
 
             SessionTagsEditor(store: model.store, sessionID: session.sessionID)
+
+            if !unplaced.isEmpty {
+                AttachmentsSection(attachments: unplaced, model: attachments)
+            }
 
             if session.hasChildren {
                 ChildSessionsSection(store: model.store, parent: session)
@@ -177,6 +186,8 @@ struct SessionDetailView: View {
 
 struct MessageBubble: View {
     let message: SessionMessage
+    var attachments: [SessionAttachment] = []
+    var attachmentsModel: SessionAttachmentsModel? = nil
 
     private var isUser: Bool { message.source == .user }
     private var background: AnyShapeStyle { isUser ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.quaternary) }
@@ -189,6 +200,10 @@ struct MessageBubble: View {
                 .padding(.vertical, 8)
                 .background(background, in: RoundedRectangle(cornerRadius: 16))
                 .foregroundStyle(isUser ? .white : .primary)
+            if let attachmentsModel, !attachments.isEmpty {
+                AttachmentStrip(attachments: attachments, model: attachmentsModel)
+                    .padding(.top, 3)
+            }
             Text(message.createdAt, style: .time)
                 .font(.caption2)
                 .foregroundStyle(.tertiary)

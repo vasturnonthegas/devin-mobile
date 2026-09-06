@@ -69,6 +69,7 @@ final class AppModel {
     func signOut() {
         account?.sessions.stopPolling()
         try? store.clear()
+        WidgetTimeline.clear()
         authState = .signedOut
     }
 }

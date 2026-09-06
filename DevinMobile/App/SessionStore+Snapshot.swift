@@ -7,6 +7,6 @@ extension SessionStore {
     /// recorded: a filtered page would under-count "Needs you".
     func publishSnapshot() {
         guard filter.isEmpty else { return }
-        try? SessionSnapshot(sessions: sessions).save()
+        WidgetTimeline.publish(SessionSnapshot(sessions: sessions))
     }
 }

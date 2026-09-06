@@ -5,6 +5,7 @@ struct NewSessionView: View {
     let store: SessionStore
     let relatedSession: Session?
     let onCreated: (Session) -> Void
+    private let initialAttachments: [DraftAttachment]
 
     @Environment(\.dismiss) private var dismiss
 
@@ -23,22 +24,28 @@ struct NewSessionView: View {
     @State private var secretIDs: Set<String> = []
     @State private var attachments: ComposerAttachments
     @State private var linkRelatedSession = true
+    @State private var didSeedAttachments = false
     @State private var isCreating = false
     @State private var errorMessage: String?
     @FocusState private var promptFocused: Bool
 
     /// `initialPrompt` prefills the task field (e.g. an insights suggested prompt);
-    /// `relatedSession` shows the "Related session" toggle and feeds `session_links`.
+    /// `initialRepos` / `initialAttachments` prefill the repositories and start their uploads (share
+    /// extension); `relatedSession` shows the "Related session" toggle and feeds `session_links`.
     init(
         store: SessionStore,
         initialPrompt: String = "",
+        initialRepos: [String] = [],
+        initialAttachments: [DraftAttachment] = [],
         relatedSession: Session? = nil,
         onCreated: @escaping (Session) -> Void
     ) {
         self.store = store
         self.relatedSession = relatedSession
         self.onCreated = onCreated
+        self.initialAttachments = initialAttachments
         _prompt = State(initialValue: initialPrompt)
+        _selectedRepos = State(initialValue: initialRepos)
         _attachments = State(initialValue: ComposerAttachments(client: store.client, orgID: store.orgID))
     }
 
@@ -152,6 +159,7 @@ struct NewSessionView: View {
                 }
             }
             .task { await loadPlaybooks() }
+            .task { await seedAttachments() }
             .sheet(item: $previewingPlaybook) { target in
                 PlaybookPreviewSheet(store: store, playbookID: target.id)
             }
@@ -166,6 +174,13 @@ struct NewSessionView: View {
     private func loadPlaybooks() async {
         guard let page = try? await store.client.playbooks(org: store.orgID) else { return }
         playbooks = page.items.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+    }
+
+    /// Once per sheet: the view struct is rebuilt often, the uploads must not be.
+    private func seedAttachments() async {
+        guard !didSeedAttachments, !initialAttachments.isEmpty else { return }
+        didSeedAttachments = true
+        await attachments.seed(initialAttachments)
     }
 
     private func create() {

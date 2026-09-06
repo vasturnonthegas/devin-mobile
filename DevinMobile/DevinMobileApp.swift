@@ -48,6 +48,7 @@ struct RootView: View {
         case .signedIn(let account):
             InboxView(store: account.sessions)
                 .id(account.credentials.orgID)
+                .presentsSharedDrafts(store: account.sessions)
         }
     }
 }

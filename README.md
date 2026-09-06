@@ -22,6 +22,14 @@ Package tests run anywhere Swift 6 does:
 cd DevinKit && swift test
 ```
 
+## Release
+
+```sh
+git tag v0.1.0 && git push origin v0.1.0   # → .github/workflows/testflight.yml → TestFlight
+```
+
+The tag is the marketing version (`v0.1.0` → `0.1.0`, a `-beta.1` suffix is dropped) and the workflow run number is the build number; nothing is bumped by hand. Signing uses repository secrets (`ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_API_KEY_P8`, `APPLE_TEAM_ID`; optional `DISTRIBUTION_CERTIFICATE_P12_BASE64` + `DISTRIBUTION_CERTIFICATE_PASSWORD`) — see the header of the workflow file.
+
 ## Sign in
 
 Paste a Personal Access Token (`cog_…`) from **Devin → Settings → Devin API**. The app calls `GET /v3/self` to find your organization, verifies it can list sessions, and stores the token in the Keychain. Enterprise tokens aren't bound to an org — tap **I have an enterprise token** and enter the `org-…` ID.

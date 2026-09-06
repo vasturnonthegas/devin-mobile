@@ -50,7 +50,8 @@ enum MockAPI {
                 updatedAt: now.addingTimeInterval(-Double(i) * 3_600),
                 devinMode: shape.2,
                 origin: .api,
-                userID: members[i % members.count].userID
+                userID: members[i % members.count].userID,
+                structuredOutput: shape.1 == .finished ? structuredOutput(index: i) : nil
             )
         }
     }()
@@ -65,6 +66,21 @@ enum MockAPI {
         return states.enumerated().map { offset, state in
             PullRequest(url: URL(string: "https://github.com/acme/app/pull/\(100 + i + offset)")!, state: state)
         }
+    }
+
+    private static func structuredOutput(index: Int) -> JSONValue {
+        .object([
+            "summary": .string("Found \(index % 5) flaky tests in CI"),
+            "confidence": .number(0.85),
+            "tests_run": .number(Double(120 + index)),
+            "has_blockers": .bool(index % 2 == 0),
+            "owner": .null,
+            "issues": .array([
+                .object(["file": .string("Tests/LoginTests.swift"), "line": .number(42), "reasons": .array([.string("timing"), .string("shared state")])]),
+                .object(["file": .string("Tests/InboxTests.swift"), "line": .number(7), "reasons": .array([])]),
+            ]),
+            "meta": .object([:]),
+        ])
     }
 
     static let members: [OrgMember] = [

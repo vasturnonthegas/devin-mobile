@@ -118,6 +118,10 @@ struct SessionDetailView: View {
             if session.hasChildren {
                 ChildSessionsSection(store: model.store, parent: session)
             }
+
+            if let output = session.structuredOutput {
+                StructuredOutputSection(output: output)
+            }
         }
         .padding(12)
         .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 14))

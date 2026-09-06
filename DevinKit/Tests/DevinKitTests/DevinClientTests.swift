@@ -192,6 +192,76 @@ final class DevinClientTests: XCTestCase {
         XCTAssertFalse(page.hasNextPage)
     }
 
+    func testStructuredOutputDecodesAsOpaqueJSON() async throws {
+        transport.stub(json: Fixtures.sessionStructuredOutput)
+        let session = try await client.session(org: "org-xyz", id: "devin-out001")
+        let output = try XCTUnwrap(session.structuredOutput)
+
+        XCTAssertEqual(output["summary"], .string("3 flaky tests found"))
+        XCTAssertEqual(output["confidence"], .number(0.85))
+        XCTAssertEqual(output["total"], .number(3))
+        XCTAssertEqual(output["has_blockers"], .bool(false))
+        XCTAssertEqual(output["owner"], .null)
+        XCTAssertEqual(output["meta"], .object([:]))
+        XCTAssertEqual(output["issues"]?[1]?["file"], .string("Tests/Inbox\"Tests\".swift"))
+        XCTAssertEqual(output["issues"]?[0]?["reasons"], .array([.string("timing"), .string("shared state")]))
+        XCTAssertNil(output["issues"]?[2])
+        XCTAssertEqual(output.sortedMembers.map(\.key), ["confidence", "has_blockers", "issues", "meta", "owner", "summary", "total"])
+
+        transport.stub(json: Fixtures.sessionsPage)
+        let page = try await client.sessions(org: "org-xyz")
+        XCTAssertNil(page.items[0].structuredOutput, "explicit null decodes as absent")
+        XCTAssertNil(page.items[1].structuredOutput, "missing key decodes as absent")
+    }
+
+    func testStructuredOutputPrettyPrintedIsStableAndRoundTrips() async throws {
+        transport.stub(json: Fixtures.sessionStructuredOutput)
+        let session = try await client.session(org: "org-xyz", id: "devin-out001")
+        let output = try XCTUnwrap(session.structuredOutput)
+
+        let expected = """
+        {
+          "confidence": 0.85,
+          "has_blockers": false,
+          "issues": [
+            {
+              "file": "Tests/LoginTests.swift",
+              "line": 42,
+              "reasons": [
+                "timing",
+                "shared state"
+              ]
+            },
+            {
+              "file": "Tests/Inbox\\"Tests\\".swift",
+              "line": 7,
+              "reasons": []
+            }
+          ],
+          "meta": {},
+          "owner": null,
+          "summary": "3 flaky tests found",
+          "total": 3
+        }
+        """
+        XCTAssertEqual(output.prettyPrinted, expected)
+
+        let reparsed = try JSONDecoder().decode(JSONValue.self, from: Data(output.prettyPrinted.utf8))
+        XCTAssertEqual(reparsed, output)
+        XCTAssertEqual(JSONValue.string("a\n\t\u{1}\\").prettyPrinted, #""a\n\t\u0001\\""#)
+    }
+
+    func testJSONValueDecodesNonObjectTopLevel() throws {
+        let value = try JSONDecoder().decode(JSONValue.self, from: Data(#"[1, "a", true, null, {"k": 2.5}, -0.5, 1e20]"#.utf8))
+        XCTAssertEqual(value, .array([.number(1), .string("a"), .bool(true), .null, .object(["k": .number(2.5)]), .number(-0.5), .number(1e20)]))
+        XCTAssertEqual(value.scalarDescription, "[7]")
+        XCTAssertEqual(value[4]?.scalarDescription, "{1}")
+        XCTAssertEqual(value[0]?.scalarDescription, "1")
+        XCTAssertEqual(value[5]?.scalarDescription, "-0.5")
+        XCTAssertEqual(value[6]?.prettyPrinted, "1e+20")
+        XCTAssertEqual(value.prettyPrinted, "[\n  1,\n  \"a\",\n  true,\n  null,\n  {\n    \"k\": 2.5\n  },\n  -0.5,\n  1e+20\n]")
+    }
+
     func testCreateSessionEncodesSnakeCaseBody() async throws {
         transport.stub(json: Fixtures.sessionRunningWaiting)
 

@@ -134,7 +134,9 @@ truth; the summary below was taken from it).
       "Suggested prompt → start new session" is a nice one-tap flow.
 - [x] **Pull request states** — `PullRequestState` typed from `pr_state`, badges via
       `PullRequestStateBadge`; `ExternalLink.open` prefers the Universal-Link app (GitHub) over Safari.
-- [ ] **Devin Review** — `POST/GET …/pr-reviews` to trigger/see review status for a PR URL.
+- [x] **Devin Review** — `POST/GET …/pr-reviews` to trigger/see review status for a PR URL.
+      `PullRequestReviewRow` polls `pollPRReview` (pinned to the returned `commit_sha`) until a
+      terminal status; 404 = "not reviewed", 403 hides the row's controls.
 - [x] **Better transcript rendering** — `MarkdownMessageBody` renders headings, lists, quotes,
       tables, links, inline code and fenced code (monospaced, horizontally scrollable, copy button)
       from `AttributedString(markdown:)` `.full` syntax, no dependency. Messages over ~14 lines or

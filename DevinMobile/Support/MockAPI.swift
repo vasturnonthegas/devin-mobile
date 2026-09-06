@@ -116,6 +116,54 @@ enum MockAPI {
         OrgMember(userID: "user-mock-2", email: "priya@example.com", name: "Priya Natarajan"),
         OrgMember(userID: "user-mock-3", email: "sam.rivera@example.com", name: nil),
     ]
+
+    /// Devin Reviews keyed by PR URL. Every other mock PR starts reviewed; triggering one walks
+    /// pending → running → completed over `reviewDuration` seconds of wall-clock time.
+    static let reviews = MockReviews()
+}
+
+final class MockReviews: @unchecked Sendable {
+    static let reviewDuration: TimeInterval = 8
+
+    private let lock = NSLock()
+    private var queuedAt: [URL: Date] = [:]
+
+    init() {
+        let longAgo = Date(timeIntervalSince1970: 1_756_890_000)
+        for session in MockAPI.sessions {
+            for pr in session.pullRequests where pr.url.lastPathComponent.hasSuffix("0") || pr.url.lastPathComponent.hasSuffix("8") {
+                queuedAt[pr.url] = longAgo
+            }
+        }
+    }
+
+    func trigger(_ url: URL) -> PRReview {
+        lock.withLock {
+            let now = Date.now
+            queuedAt[url] = now
+            return review(for: url, queuedAt: now)
+        }
+    }
+
+    func latest(_ url: URL) -> PRReview? {
+        lock.withLock { queuedAt[url].map { review(for: url, queuedAt: $0) } }
+    }
+
+    private func review(for url: URL, queuedAt: Date) -> PRReview {
+        let elapsed = Date.now.timeIntervalSince(queuedAt)
+        let status: PRReviewStatus = elapsed < Self.reviewDuration / 4 ? .pending
+            : elapsed < Self.reviewDuration ? .running
+            : url.lastPathComponent.hasSuffix("8") ? .errored : .completed
+        let parts = url.pathComponents.filter { $0 != "/" }
+        let hex = String(Int(queuedAt.timeIntervalSince1970), radix: 16)
+        return PRReview(
+            status: status,
+            repoPath: "\(url.host ?? "github.com")/\(parts[0])/\(parts[1])",
+            prNumber: Int(url.lastPathComponent) ?? 0,
+            commitSHA: String(String(repeating: hex, count: 5).prefix(40)),
+            createdAt: queuedAt
+        )
+    }
 }
 
 final class MockAPIProtocol: URLProtocol, @unchecked Sendable {
@@ -153,6 +201,19 @@ final class MockAPIProtocol: URLProtocol, @unchecked Sendable {
         }
         if method == "GET", parts.count == 5, parts[0] == "v3beta1", parts[3] == "members", parts[4] == "users" {
             return encode(Page(items: MockAPI.members))
+        }
+        if parts.count == 4, parts[0] == "v3", parts[1] == "organizations", parts[3] == "pr-reviews" {
+            let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            let prURL: URL?
+            if method == "POST" {
+                prURL = body(of: request).flatMap { try? JSONDecoder().decode([String: URL].self, from: $0) }?["pr_url"]
+            } else {
+                prURL = items.first { $0.name == "pr_url" }?.value.flatMap(URL.init)
+            }
+            guard let prURL else { return (422, Data(#"{"status":422,"title":"Unprocessable Content","detail":"pr_url is required"}"#.utf8)) }
+            if method == "POST" { return encode(MockAPI.reviews.trigger(prURL)) }
+            guard let review = MockAPI.reviews.latest(prURL) else { return notFound() }
+            return encode(review)
         }
         if method == "GET", parts.count == 6, parts[0] == "v3", parts[3] == "attachments" {
             return MockAPI.attachmentBody(uuid: parts[4], name: parts[5]).map { (200, $0) } ?? notFound()
@@ -201,6 +262,23 @@ final class MockAPIProtocol: URLProtocol, @unchecked Sendable {
         default:
             return notFound()
         }
+    }
+
+    /// URLSession hands protocols the body as a stream, not `httpBody`.
+    private static func body(of request: URLRequest) -> Data? {
+        if let body = request.httpBody { return body }
+        guard let stream = request.httpBodyStream else { return nil }
+        stream.open()
+        defer { stream.close() }
+        var data = Data()
+        let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: 4096)
+        defer { buffer.deallocate() }
+        while stream.hasBytesAvailable {
+            let read = stream.read(buffer, maxLength: 4096)
+            guard read > 0 else { break }
+            data.append(buffer, count: read)
+        }
+        return data
     }
 
     private static func encode<T: Encodable>(_ value: T) -> (Int, Data) {

@@ -103,8 +103,7 @@ struct SessionDetailView: View {
             }
 
             ForEach(session.pullRequests, id: \.url) { pr in
-                PullRequestLink(pullRequest: pr)
-                    .font(.subheadline)
+                PullRequestReviewRow(store: model.store, pullRequest: pr)
             }
 
             SessionMetadataLine(session: session)

@@ -287,6 +287,23 @@ enum Fixtures {
     {"status": 403, "title": "Forbidden", "detail": "Missing permission: ViewOrgMembers", "type": "about:blank"}
     """
 
+    static let prReviewPending = """
+    {"status": "pending", "repo_path": "github.com/acme/api", "pr_number": 42,
+     "commit_sha": "abc123def4567890abc123def4567890abc123de", "created_at": "2025-09-03T10:00:00.250Z"}
+    """
+
+    static let prReviewRunning = prReviewPending.replacingOccurrences(of: "\"pending\"", with: "\"running\"")
+    static let prReviewCompleted = prReviewPending.replacingOccurrences(of: "\"pending\"", with: "\"completed\"")
+
+    static let prReviewUnknownStatus = """
+    {"status": "awaiting_provider", "repo_path": "gitlab.com/acme/web", "pr_number": 7,
+     "commit_sha": "0123456789abcdef0123456789abcdef01234567", "created_at": "2025-09-03T10:05:00Z", "future_field": 1}
+    """
+
+    static let problem404PRReview = """
+    {"status": 404, "title": "Not Found", "detail": "No Devin Review exists for commit abc123d", "type": "about:blank"}
+    """
+
     static let playbooksPage = """
     {
       "items": [

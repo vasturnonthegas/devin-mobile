@@ -55,11 +55,45 @@ enum MockAPI {
         }
     }()
 
+    /// Devin Reviews keyed by PR URL. Seeded reviews are long finished; a triggered one walks
+    /// pending → running → completed over ~9 s so the detail header's poller has something to show.
+    static let reviews = MockReviews(seeded: sessions.enumerated().compactMap { i, session in
+        i % 8 == 0 ? session.pullRequests.first?.url : nil
+    })
+
     static let members: [OrgMember] = [
         OrgMember(userID: "user-mock", email: "mock@example.com", name: "Mock User"),
         OrgMember(userID: "user-mock-2", email: "priya@example.com", name: "Priya Natarajan"),
         OrgMember(userID: "user-mock-3", email: "sam.rivera@example.com", name: nil),
     ]
+}
+
+final class MockReviews: @unchecked Sendable {
+    private let lock = NSLock()
+    private var acceptedAt: [URL: Date] = [:]
+
+    init(seeded: [URL]) {
+        for url in seeded { acceptedAt[url] = Date(timeIntervalSince1970: 1_756_890_000) }
+    }
+
+    func accept(_ url: URL) -> PRReview {
+        lock.withLock { acceptedAt[url] = .now }
+        return review(for: url)!
+    }
+
+    func review(for url: URL) -> PRReview? {
+        guard let accepted = lock.withLock({ acceptedAt[url] }) else { return nil }
+        let age = Date.now.timeIntervalSince(accepted)
+        let status: PRReviewStatus = age < 3 ? .pending : age < 9 ? .running : .completed
+        let parts = url.pathComponents.filter { $0 != "/" }
+        return PRReview(
+            status: status,
+            repoPath: "\(url.host ?? "github.com")/\(parts.prefix(2).joined(separator: "/"))",
+            prNumber: parts.last.flatMap(Int.init) ?? 0,
+            commitSHA: String(format: "%040lx", UInt(bitPattern: url.absoluteString.hashValue)),
+            createdAt: accepted
+        )
+    }
 }
 
 final class MockAPIProtocol: URLProtocol, @unchecked Sendable {
@@ -98,6 +132,19 @@ final class MockAPIProtocol: URLProtocol, @unchecked Sendable {
         if method == "GET", parts.count == 5, parts[0] == "v3beta1", parts[3] == "members", parts[4] == "users" {
             return encode(Page(items: MockAPI.members))
         }
+        if parts.count == 4, parts[0] == "v3", parts[1] == "organizations", parts[3] == "pr-reviews" {
+            let prURL: URL?
+            if method == "POST" {
+                let body = (try? JSONSerialization.jsonObject(with: bodyData(of: request))) as? [String: Any]
+                prURL = (body?["pr_url"] as? String).flatMap { URL(string: $0) }
+            } else {
+                prURL = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "pr_url" }?.value.flatMap { URL(string: $0) }
+            }
+            guard let prURL else { return (422, Data(#"{"status":422,"title":"Unprocessable Content","detail":"pr_url is required"}"#.utf8)) }
+            if method == "POST" { return encode(MockAPI.reviews.accept(prURL)) }
+            guard let review = MockAPI.reviews.review(for: prURL) else { return notFound() }
+            return encode(review)
+        }
         // Everything else is /v3/organizations/{org}/sessions[/{id}[/{sub}]]
         guard parts.count >= 4, parts[0] == "v3", parts[1] == "organizations", parts[3] == "sessions" else { return notFound() }
         let id = parts.count > 4 ? parts[4] : nil
@@ -129,6 +176,22 @@ final class MockAPIProtocol: URLProtocol, @unchecked Sendable {
         default:
             return notFound()
         }
+    }
+
+    /// URLSession hands protocols the body as a stream, not `httpBody`.
+    private static func bodyData(of request: URLRequest) -> Data {
+        if let body = request.httpBody { return body }
+        guard let stream = request.httpBodyStream else { return Data() }
+        stream.open()
+        defer { stream.close() }
+        var data = Data()
+        var buffer = [UInt8](repeating: 0, count: 4096)
+        while stream.hasBytesAvailable {
+            let read = stream.read(&buffer, maxLength: buffer.count)
+            guard read > 0 else { break }
+            data.append(buffer, count: read)
+        }
+        return data
     }
 
     private static func encode<T: Encodable>(_ value: T) -> (Int, Data) {

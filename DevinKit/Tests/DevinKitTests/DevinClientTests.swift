@@ -308,6 +308,141 @@ final class DevinClientTests: XCTestCase {
         XCTAssertEqual(SessionTags.maxCount, 50)
     }
 
+    func testPRReviewGetBuildsQueryAndDecodes() async throws {
+        transport.stub(json: Fixtures.prReviewCompleted)
+        let prURL = URL(string: "https://github.com/acme/api/pull/42")!
+        let review = try await client.prReview(org: "org-xyz", prURL: prURL, commitSHA: "abc123d")
+
+        let request = transport.lastRequest
+        XCTAssertEqual(request.httpMethod, "GET")
+        XCTAssertEqual(request.url?.path, "/v3/organizations/org-xyz/pr-reviews")
+        let items = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)!.queryItems!
+        XCTAssertEqual(items, [
+            URLQueryItem(name: "pr_url", value: "https://github.com/acme/api/pull/42"),
+            URLQueryItem(name: "commit_sha", value: "abc123d"),
+        ])
+        XCTAssertNil(request.httpBody)
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer cog_test")
+
+        XCTAssertEqual(review?.status, .completed)
+        XCTAssertTrue(review?.isFinished ?? false)
+        XCTAssertEqual(review?.repoPath, "github.com/acme/api")
+        XCTAssertEqual(review?.prNumber, 42)
+        XCTAssertEqual(review?.commitSHA, "abc123def4567890abc123def4567890abc123de")
+        XCTAssertEqual(review?.shortCommitSHA, "abc123d")
+        XCTAssertEqual(review?.createdAt, Date(timeIntervalSince1970: 1_756_893_600.25))
+    }
+
+    func testPRReviewGetOmitsCommitAndMapsNotFoundToNil() async throws {
+        transport.stub(404, json: Fixtures.problem404PRReview)
+        let review = try await client.prReview(org: "org-xyz", prURL: URL(string: "https://github.com/acme/api/pull/42")!)
+        XCTAssertNil(review)
+        let items = URLComponents(url: transport.lastRequest.url!, resolvingAgainstBaseURL: false)!.queryItems!
+        XCTAssertEqual(items.map(\.name), ["pr_url"])
+    }
+
+    func testPRReviewGetForbiddenStaysTyped() async {
+        transport.stub(403, json: Fixtures.problem403)
+        do {
+            _ = try await client.prReview(org: "org-xyz", prURL: URL(string: "https://github.com/acme/api/pull/42")!)
+            XCTFail("expected error")
+        } catch let error as DevinError {
+            XCTAssertTrue(error.isAuthFailure)
+        } catch {
+            XCTFail("wrong error type: \(error)")
+        }
+    }
+
+    func testRequestPRReviewPostsURLBody() async throws {
+        transport.stub(json: Fixtures.prReviewPending)
+        let review = try await client.requestPRReview(org: "org-xyz", prURL: URL(string: "https://github.com/acme/api/pull/42")!)
+
+        let request = transport.lastRequest
+        XCTAssertEqual(request.httpMethod, "POST")
+        XCTAssertEqual(request.url?.path, "/v3/organizations/org-xyz/pr-reviews")
+        XCTAssertNil(request.url?.query)
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Content-Type"), "application/json")
+        XCTAssertEqual(request.bodyJSON["pr_url"] as? String, "https://github.com/acme/api/pull/42")
+        XCTAssertEqual(request.bodyJSON.count, 1)
+
+        XCTAssertEqual(review.status, .pending)
+        XCTAssertTrue(review.isInProgress)
+        XCTAssertEqual(review.statusSummary, "Review queued")
+    }
+
+    func testPRReviewUnknownStatusDecodesAndCountsAsFinished() async throws {
+        transport.stub(json: Fixtures.prReviewUnknownStatus)
+        let review = try await client.prReview(org: "org-xyz", prURL: URL(string: "https://gitlab.com/acme/web/-/merge_requests/7")!)
+        XCTAssertNil(review?.status)
+        XCTAssertEqual(review?.rawStatus, "awaiting_provider")
+        XCTAssertEqual(review?.statusSummary, "Awaiting Provider")
+        XCTAssertTrue(review?.isFinished ?? false, "unknown statuses must not keep a poller alive")
+        XCTAssertEqual(review?.repoPath, "gitlab.com/acme/web")
+    }
+
+    func testWatchPRReviewPollsUntilCompleted() async throws {
+        transport.stub(json: Fixtures.prReviewPending)
+        transport.stub(404, json: Fixtures.problem404PRReview)
+        transport.stub(json: Fixtures.prReviewRunning)
+        transport.stub(json: Fixtures.prReviewCompleted)
+        transport.stub(json: Fixtures.prReviewCompleted) // must never be requested
+
+        let sleeps = Sleeps()
+        let stream = client.watchPRReview(
+            org: "org-xyz",
+            prURL: URL(string: "https://github.com/acme/api/pull/42")!,
+            commitSHA: "abc123def4567890abc123def4567890abc123de",
+            interval: .seconds(7),
+            sleep: { await sleeps.record($0) }
+        )
+
+        var seen: [PRReviewStatus?] = []
+        for try await review in stream { seen.append(review.status) }
+
+        XCTAssertEqual(seen, [.pending, .running, .completed])
+        XCTAssertEqual(transport.requests.count, 4, "stops at the first terminal status")
+        let slept = await sleeps.durations
+        XCTAssertEqual(slept, Array(repeating: .seconds(7), count: 4))
+        for request in transport.requests {
+            let items = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)!.queryItems!
+            XCTAssertEqual(items.first { $0.name == "commit_sha" }?.value, "abc123def4567890abc123def4567890abc123de")
+        }
+    }
+
+    func testWatchPRReviewGivesUpAfterMaxPolls() async throws {
+        transport.stub(json: Fixtures.prReviewPending)
+        transport.stub(json: Fixtures.prReviewRunning)
+        transport.stub(json: Fixtures.prReviewRunning) // must never be requested
+
+        let stream = client.watchPRReview(
+            org: "org-xyz", prURL: URL(string: "https://github.com/acme/api/pull/42")!, commitSHA: nil,
+            maxPolls: 2, sleep: { _ in }
+        )
+        var seen: [PRReviewStatus?] = []
+        for try await review in stream { seen.append(review.status) }
+        XCTAssertEqual(seen, [.pending, .running])
+        XCTAssertEqual(transport.requests.count, 2)
+    }
+
+    func testWatchPRReviewPropagatesErrors() async {
+        transport.stub(json: Fixtures.prReviewPending)
+        transport.stub(403, json: Fixtures.problem403)
+
+        let stream = client.watchPRReview(
+            org: "org-xyz", prURL: URL(string: "https://github.com/acme/api/pull/42")!, commitSHA: nil, sleep: { _ in }
+        )
+        var seen: [PRReviewStatus?] = []
+        do {
+            for try await review in stream { seen.append(review.status) }
+            XCTFail("expected error")
+        } catch let error as DevinError {
+            XCTAssertEqual(seen, [.pending])
+            XCTAssertTrue(error.isAuthFailure)
+        } catch {
+            XCTFail("wrong error type: \(error)")
+        }
+    }
+
     func testMeDecodesOrg() async throws {
         transport.stub(json: Fixtures.selfPAT)
         let me = try await client.me()
@@ -424,6 +559,12 @@ final class SessionListMergeTests: XCTestCase {
         let merged = loaded.merging([session("a"), session("new")], pruneMissing: true)
         XCTAssertEqual(merged.map(\.sessionID), ["a", "new"])
     }
+}
+
+/// Records the sleeps a poller asked for instead of actually waiting.
+private actor Sleeps {
+    private(set) var durations: [Duration] = []
+    func record(_ duration: Duration) { durations.append(duration) }
 }
 
 final class CredentialStoreTests: XCTestCase {

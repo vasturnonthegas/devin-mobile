@@ -51,6 +51,10 @@ Rules of thumb that the existing code follows:
 - **Cursor pagination.** `SessionStore` loads `first=50` pages and follows `end_cursor` via
   `SessionQuery.after` (`loadMore()`, prefetched when the last 10 inbox rows appear). Polling
   re-fetches only page 1 and upserts by `session_id` (`[Session].merging`) so deeper pages stay put.
+- **Devin Review is polled per PR, not per session.** `DevinClient.watchPRReview` re-fetches
+  `GET …/pr-reviews?pr_url&commit_sha` every 5 s after a trigger until the status is terminal
+  (`PRReview.isFinished`; unknown statuses count as finished so a poller never spins). A 403 on the
+  first GET hides the review line for that PR.
 - **Member names are in-memory only.** `MemberDirectory` (DevinKit actor) fetches the whole
   members list once per launch and caches `user_id → OrgMember`; a 403 is sticky and the inbox
   simply omits owner chips (shown in Everyone scope only). Nothing about members is persisted.
@@ -117,7 +121,8 @@ truth; the summary below was taken from it).
       "Suggested prompt → start new session" is a nice one-tap flow.
 - [ ] **Pull request states** — poll `pull_requests[].pr_state`; show merged/closed badges;
       deep-link to GitHub app if installed.
-- [ ] **Devin Review** — `POST/GET …/pr-reviews` to trigger/see review status for a PR URL.
+- [x] **Devin Review** — `POST/GET …/pr-reviews`; `PullRequestRow` shows the latest review status
+      under each PR link with a Review / Re-review button (`PRReviewModel`).
 - [ ] **Better transcript rendering** — replace `LocalizedStringKey` markdown with a proper
       renderer (AttributedString(markdown:) with `.full` syntax, or a small dependency such as
       `swift-markdown-ui` if a dependency is acceptable — ask). Code blocks need monospaced,

@@ -287,6 +287,36 @@ final class DevinClientTests: XCTestCase {
         XCTAssertEqual(session.sessionID, "devin-abc123")
     }
 
+    func testCreateSessionEncodesAdvancedOptionsOnlyWhenSet() async throws {
+        transport.stub(json: Fixtures.sessionRunningWaiting)
+        _ = try await client.createSession(org: "org-xyz", NewSessionRequest(prompt: "Plain"))
+        var body = transport.lastRequest.bodyJSON
+        XCTAssertEqual(Set(body.keys), ["prompt"], "unset advanced fields are omitted so the API applies its defaults")
+
+        transport.stub(json: Fixtures.sessionRunningWaiting)
+        let schema = try StructuredOutputSchema.parse(#"{"type":"object","properties":{"count":{"type":"integer","minimum":1}},"required":["count"]}"#)
+        let request = NewSessionRequest(
+            prompt: "Count PRs",
+            resumable: false,
+            bypassApproval: true,
+            platform: "windows",
+            structuredOutputSchema: schema
+        )
+        _ = try await client.createSession(org: "org-xyz", request)
+
+        XCTAssertEqual(transport.lastRequest.url?.path, "/v3/organizations/org-xyz/sessions")
+        body = transport.lastRequest.bodyJSON
+        XCTAssertEqual(body["bypass_approval"] as? Bool, true)
+        XCTAssertEqual(body["resumable"] as? Bool, false)
+        XCTAssertEqual(body["platform"] as? String, "windows")
+        let encoded = body["structured_output_schema"] as? [String: Any]
+        XCTAssertEqual(encoded?["type"] as? String, "object")
+        XCTAssertEqual(encoded?["required"] as? [String], ["count"])
+        let count = (encoded?["properties"] as? [String: Any])?["count"] as? [String: Any]
+        XCTAssertEqual(count?["minimum"] as? Int, 1, "integral schema numbers round-trip without a fraction")
+        XCTAssertEqual(count?["type"] as? String, "integer")
+    }
+
     func testSendMessage() async throws {
         transport.stub(json: "null")
         try await client.send(message: "LGTM, merge it", org: "org-xyz", id: "devin-abc123")

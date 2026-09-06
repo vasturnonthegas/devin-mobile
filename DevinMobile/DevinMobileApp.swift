@@ -4,6 +4,8 @@ import DevinKit
 @main
 struct DevinMobileApp: App {
     @State private var app = AppModel(store: DevinMobileApp.credentialStore)
+    // Owns the DeepLinkRouter so notification taps and URL opens land in the same place.
+    @UIApplicationDelegateAdaptor(NotificationDelegate.self) private var notifications
 
     init() {
         #if DEBUG
@@ -15,14 +17,21 @@ struct DevinMobileApp: App {
         #if DEBUG
         if MockAPI.isEnabled { return MockAPI.credentialStore }
         #endif
-        return KeychainCredentialStore()
+        // Shared with extensions via the App Group; a pre-existing app-private item is moved over once.
+        return AppGroup.credentialStore.adoptingCredentials(from: KeychainCredentialStore())
     }
 
     var body: some Scene {
         WindowGroup {
             RootView()
                 .environment(app)
+                .environment(notifications.router)
                 .task { app.restore() }
+                .onOpenURL { url in notifications.router.open(url) }
+                .schedulesBackgroundRefresh(for: app)
+        }
+        .backgroundTask(.appRefresh(BackgroundRefresh.taskIdentifier)) {
+            await BackgroundRefresh.run(credentials: await MainActor.run { DevinMobileApp.credentialStore })
         }
     }
 }

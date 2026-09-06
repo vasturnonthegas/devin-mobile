@@ -14,9 +14,11 @@ struct NewSessionView: View {
     @State private var mode: DevinMode = .normal
     @State private var playbooks: [Playbook] = []
     @State private var playbookID: String?
+    @State private var previewingPlaybook: PlaybookPreviewTarget?
     @State private var limitACUs = false
     @State private var acuLimit = 10
     @State private var tagsInput = ""
+    @State private var advanced = NewSessionAdvancedOptions()
     @State private var isCreating = false
     @State private var errorMessage: String?
     @FocusState private var promptFocused: Bool
@@ -29,7 +31,7 @@ struct NewSessionView: View {
     }
 
     private var canCreate: Bool {
-        !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !isCreating
+        !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !isCreating && advanced.isValid
     }
 
     var body: some View {
@@ -97,6 +99,13 @@ struct NewSessionView: View {
                                 Text(playbook.title).tag(Optional(playbook.playbookID))
                             }
                         }
+                        if let playbookID {
+                            Button {
+                                previewingPlaybook = PlaybookPreviewTarget(id: playbookID)
+                            } label: {
+                                Label("Preview playbook", systemImage: "doc.text.magnifyingglass")
+                            }
+                        }
                     }
                     Toggle("Cap ACUs", isOn: $limitACUs.animation())
                     if limitACUs {
@@ -106,6 +115,8 @@ struct NewSessionView: View {
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
                 }
+
+                NewSessionAdvancedSection(options: $advanced)
 
                 if let errorMessage {
                     Section {
@@ -129,6 +140,9 @@ struct NewSessionView: View {
                 }
             }
             .task { await loadPlaybooks() }
+            .sheet(item: $previewingPlaybook) { target in
+                PlaybookPreviewSheet(store: store, playbookID: target.id)
+            }
             .onAppear { promptFocused = true }
             .interactiveDismissDisabled(!prompt.isEmpty)
         }
@@ -169,7 +183,7 @@ struct NewSessionView: View {
         Task {
             defer { isCreating = false }
             do {
-                let session = try await store.create(request)
+                let session = try await store.create(advanced.applied(to: request))
                 RecentRepos.remember(selectedRepos)
                 dismiss()
                 onCreated(session)

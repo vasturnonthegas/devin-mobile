@@ -115,6 +115,23 @@ final class DevinClientTests: XCTestCase {
         XCTAssertEqual(odd.displayTitle, "devin-ghi789")
     }
 
+    func testPullRequestStatesDecodeAndUnknownStaysNeutral() async throws {
+        transport.stub(json: Fixtures.sessionWithPullRequests)
+        let session = try await client.session(org: "org-xyz", id: "devin-prs001")
+
+        XCTAssertEqual(transport.lastRequest.url?.path, "/v3/organizations/org-xyz/sessions/devin-prs001")
+        XCTAssertEqual(transport.lastRequest.httpMethod, "GET")
+
+        let prs = session.pullRequests
+        XCTAssertEqual(prs.map(\.stateKind), [.open, .draft, .merged, .closed, .unknown("locked_by_bot"), .unknown(nil)])
+        XCTAssertEqual(prs.map(\.stateKind.displayName), ["Open", "Draft", "Merged", "Closed", "Locked by bot", "Unknown"])
+        XCTAssertEqual(prs.map(\.stateKind.isResolved), [false, false, true, true, false, false])
+        XCTAssertEqual(prs.map(\.shortLabel), [
+            "acme/api#42", "acme/api#43", "acme/api#44", "acme/api#45", "acme/web#9", "example.com/review/77",
+        ])
+        XCTAssertEqual(prs[2].state, "MERGED", "raw value is preserved for logging/debugging")
+    }
+
     func testSecondaryMetadataDecodesNullable() async throws {
         transport.stub(json: Fixtures.sessionsPage)
         let page = try await client.sessions(org: "org-xyz")
@@ -175,6 +192,76 @@ final class DevinClientTests: XCTestCase {
         XCTAssertFalse(page.hasNextPage)
     }
 
+    func testStructuredOutputDecodesAsOpaqueJSON() async throws {
+        transport.stub(json: Fixtures.sessionStructuredOutput)
+        let session = try await client.session(org: "org-xyz", id: "devin-out001")
+        let output = try XCTUnwrap(session.structuredOutput)
+
+        XCTAssertEqual(output["summary"], .string("3 flaky tests found"))
+        XCTAssertEqual(output["confidence"], .number(0.85))
+        XCTAssertEqual(output["total"], .number(3))
+        XCTAssertEqual(output["has_blockers"], .bool(false))
+        XCTAssertEqual(output["owner"], .null)
+        XCTAssertEqual(output["meta"], .object([:]))
+        XCTAssertEqual(output["issues"]?[1]?["file"], .string("Tests/Inbox\"Tests\".swift"))
+        XCTAssertEqual(output["issues"]?[0]?["reasons"], .array([.string("timing"), .string("shared state")]))
+        XCTAssertNil(output["issues"]?[2])
+        XCTAssertEqual(output.sortedMembers.map(\.key), ["confidence", "has_blockers", "issues", "meta", "owner", "summary", "total"])
+
+        transport.stub(json: Fixtures.sessionsPage)
+        let page = try await client.sessions(org: "org-xyz")
+        XCTAssertNil(page.items[0].structuredOutput, "explicit null decodes as absent")
+        XCTAssertNil(page.items[1].structuredOutput, "missing key decodes as absent")
+    }
+
+    func testStructuredOutputPrettyPrintedIsStableAndRoundTrips() async throws {
+        transport.stub(json: Fixtures.sessionStructuredOutput)
+        let session = try await client.session(org: "org-xyz", id: "devin-out001")
+        let output = try XCTUnwrap(session.structuredOutput)
+
+        let expected = """
+        {
+          "confidence": 0.85,
+          "has_blockers": false,
+          "issues": [
+            {
+              "file": "Tests/LoginTests.swift",
+              "line": 42,
+              "reasons": [
+                "timing",
+                "shared state"
+              ]
+            },
+            {
+              "file": "Tests/Inbox\\"Tests\\".swift",
+              "line": 7,
+              "reasons": []
+            }
+          ],
+          "meta": {},
+          "owner": null,
+          "summary": "3 flaky tests found",
+          "total": 3
+        }
+        """
+        XCTAssertEqual(output.prettyPrinted, expected)
+
+        let reparsed = try JSONDecoder().decode(JSONValue.self, from: Data(output.prettyPrinted.utf8))
+        XCTAssertEqual(reparsed, output)
+        XCTAssertEqual(JSONValue.string("a\n\t\u{1}\\").prettyPrinted, #""a\n\t\u0001\\""#)
+    }
+
+    func testJSONValueDecodesNonObjectTopLevel() throws {
+        let value = try JSONDecoder().decode(JSONValue.self, from: Data(#"[1, "a", true, null, {"k": 2.5}, -0.5, 1e20]"#.utf8))
+        XCTAssertEqual(value, .array([.number(1), .string("a"), .bool(true), .null, .object(["k": .number(2.5)]), .number(-0.5), .number(1e20)]))
+        XCTAssertEqual(value.scalarDescription, "[7]")
+        XCTAssertEqual(value[4]?.scalarDescription, "{1}")
+        XCTAssertEqual(value[0]?.scalarDescription, "1")
+        XCTAssertEqual(value[5]?.scalarDescription, "-0.5")
+        XCTAssertEqual(value[6]?.prettyPrinted, "1e+20")
+        XCTAssertEqual(value.prettyPrinted, "[\n  1,\n  \"a\",\n  true,\n  null,\n  {\n    \"k\": 2.5\n  },\n  -0.5,\n  1e+20\n]")
+    }
+
     func testCreateSessionEncodesSnakeCaseBody() async throws {
         transport.stub(json: Fixtures.sessionRunningWaiting)
 
@@ -200,11 +287,152 @@ final class DevinClientTests: XCTestCase {
         XCTAssertEqual(session.sessionID, "devin-abc123")
     }
 
+    func testCreateSessionEncodesAdvancedOptionsOnlyWhenSet() async throws {
+        transport.stub(json: Fixtures.sessionRunningWaiting)
+        _ = try await client.createSession(org: "org-xyz", NewSessionRequest(prompt: "Plain"))
+        var body = transport.lastRequest.bodyJSON
+        XCTAssertEqual(Set(body.keys), ["prompt"], "unset advanced fields are omitted so the API applies its defaults")
+
+        transport.stub(json: Fixtures.sessionRunningWaiting)
+        let schema = try StructuredOutputSchema.parse(#"{"type":"object","properties":{"count":{"type":"integer","minimum":1}},"required":["count"]}"#)
+        let request = NewSessionRequest(
+            prompt: "Count PRs",
+            resumable: false,
+            bypassApproval: true,
+            platform: "windows",
+            structuredOutputSchema: schema
+        )
+        _ = try await client.createSession(org: "org-xyz", request)
+
+        XCTAssertEqual(transport.lastRequest.url?.path, "/v3/organizations/org-xyz/sessions")
+        body = transport.lastRequest.bodyJSON
+        XCTAssertEqual(body["bypass_approval"] as? Bool, true)
+        XCTAssertEqual(body["resumable"] as? Bool, false)
+        XCTAssertEqual(body["platform"] as? String, "windows")
+        let encoded = body["structured_output_schema"] as? [String: Any]
+        XCTAssertEqual(encoded?["type"] as? String, "object")
+        XCTAssertEqual(encoded?["required"] as? [String], ["count"])
+        let count = (encoded?["properties"] as? [String: Any])?["count"] as? [String: Any]
+        XCTAssertEqual(count?["minimum"] as? Int, 1, "integral schema numbers round-trip without a fraction")
+        XCTAssertEqual(count?["type"] as? String, "integer")
+    }
+
     func testSendMessage() async throws {
         transport.stub(json: "null")
         try await client.send(message: "LGTM, merge it", org: "org-xyz", id: "devin-abc123")
         XCTAssertEqual(transport.lastRequest.url?.path, "/v3/organizations/org-xyz/sessions/devin-abc123/messages")
         XCTAssertEqual(transport.lastRequest.bodyJSON["message"] as? String, "LGTM, merge it")
+        XCTAssertNil(transport.lastRequest.bodyJSON["attachment_urls"], "no attachments → key omitted, not null")
+
+        transport.stub(json: "null")
+        try await client.send(message: "empty list", attachmentURLs: [], org: "org-xyz", id: "devin-abc123")
+        XCTAssertNil(transport.lastRequest.bodyJSON["attachment_urls"])
+    }
+
+    func testSendMessageWithAttachmentURLs() async throws {
+        transport.stub(json: Fixtures.sessionRunningWaiting)
+        let url = URL(string: "https://api.devin.ai/v3/organizations/org-xyz/attachments/7f3a9c1e/bug.png")!
+
+        try await client.send(message: "Here's the crash", attachmentURLs: [url], org: "org-xyz", id: "devin-abc123")
+
+        XCTAssertEqual(transport.lastRequest.httpMethod, "POST")
+        XCTAssertEqual(transport.lastRequest.url?.path, "/v3/organizations/org-xyz/sessions/devin-abc123/messages")
+        XCTAssertEqual(transport.lastRequest.value(forHTTPHeaderField: "Content-Type"), "application/json")
+        let body = transport.lastRequest.bodyJSON
+        XCTAssertEqual(body["message"] as? String, "Here's the crash")
+        XCTAssertEqual(body["attachment_urls"] as? [String], [url.absoluteString])
+        XCTAssertEqual(body.count, 2)
+    }
+
+    func testUploadAttachmentBuildsMultipartAndDecodes() async throws {
+        transport.stub(json: Fixtures.attachmentUploaded)
+        let bytes = Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0xFF])
+
+        let uploaded = try await client.upload(data: bytes, filename: "bug.png", mime: "image/png", org: "org-xyz")
+
+        let request = transport.lastRequest
+        XCTAssertEqual(request.httpMethod, "POST")
+        XCTAssertEqual(request.url?.path, "/v3/organizations/org-xyz/attachments")
+        XCTAssertNil(request.url?.query)
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer cog_test")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Accept"), "application/json")
+
+        let contentType = request.value(forHTTPHeaderField: "Content-Type") ?? ""
+        let prefix = "multipart/form-data; boundary="
+        XCTAssertTrue(contentType.hasPrefix(prefix), "got \(contentType)")
+        let boundary = String(contentType.dropFirst(prefix.count))
+        XCTAssertFalse(boundary.isEmpty)
+
+        let body = request.httpBody!
+        let head = Data("""
+        --\(boundary)\r
+        Content-Disposition: form-data; name="file"; filename="bug.png"\r
+        Content-Type: image/png\r
+        \r
+
+        """.utf8)
+        let tail = Data("\r\n--\(boundary)--\r\n".utf8)
+        XCTAssertEqual(body, head + bytes + tail, "exactly one `file` part, raw bytes untouched, CRLF framing")
+
+        XCTAssertEqual(uploaded.attachmentID, "att-7f3a9c")
+        XCTAssertEqual(uploaded.name, "bug.png")
+        XCTAssertEqual(uploaded.url.absoluteString, "https://api.devin.ai/v3/organizations/org-xyz/attachments/7f3a9c1e-2b4d-4f6a-9c8e-1d2e3f4a5b6c/bug.png")
+    }
+
+    func testUploadAttachmentSanitizesFilename() async throws {
+        transport.stub(json: Fixtures.attachmentUploaded)
+        _ = try await client.upload(data: Data("x".utf8), filename: "we\"ird\r\nname\\.txt", mime: "text/plain", org: "org-xyz")
+        let body = String(decoding: transport.lastRequest.httpBody!, as: UTF8.self)
+        XCTAssertTrue(body.contains("filename=\"we_ird__name_.txt\""), body)
+
+        transport.stub(json: Fixtures.attachmentUploaded)
+        _ = try await client.upload(data: Data("x".utf8), filename: "", mime: "application/octet-stream", org: "org-xyz")
+        XCTAssertTrue(String(decoding: transport.lastRequest.httpBody!, as: UTF8.self).contains("filename=\"file\""))
+    }
+
+    func testUploadAttachmentTooLargeIsTypedError() async {
+        transport.stub(413, json: Fixtures.problem413Attachment)
+        do {
+            _ = try await client.upload(data: Data(count: 16), filename: "huge.mov", mime: "video/quicktime", org: "org-xyz")
+            XCTFail("expected error")
+        } catch let error as DevinError {
+            guard case .http(let status, let problem) = error else { return XCTFail("expected http error, got \(error)") }
+            XCTAssertEqual(status, 413)
+            XCTAssertEqual(error.errorDescription, "Attachments must be 25 MB or smaller")
+            XCTAssertEqual(problem?.title, "Payload Too Large")
+        } catch {
+            XCTFail("wrong error type: \(error)")
+        }
+    }
+
+    func testMessagingAvailabilityFollowsStatus() async throws {
+        transport.stub(json: Fixtures.sessionsPage)
+        transport.stub(json: Fixtures.sessionsPage2)
+        let live = try await client.sessions(org: "org-xyz").items
+        let ended = try await client.sessions(org: "org-xyz").items
+
+        XCTAssertEqual(live.map(\.messaging), [.active, .active, .wakesSession],
+                       "suspended sessions are woken by POST …/messages, whatever the (possibly unknown) status_detail")
+        XCTAssertTrue(live.allSatisfy(\.messaging.acceptsMessages))
+
+        guard case .unavailable(let exitReason) = ended[0].messaging else { return XCTFail("exit must not accept messages") }
+        XCTAssertFalse(exitReason.isEmpty)
+        guard case .unavailable(let errorReason) = ended[1].messaging else { return XCTFail("error must not accept messages") }
+        XCTAssertFalse(errorReason.isEmpty)
+        XCTAssertFalse(ended.contains { $0.messaging.acceptsMessages })
+    }
+
+    func testSendMessageToEndedSessionSurfacesConflict() async {
+        transport.stub(409, json: Fixtures.problem409SessionEnded)
+        do {
+            try await client.send(message: "wake up", org: "org-xyz", id: "devin-jkl012")
+            XCTFail("expected 409 to throw")
+        } catch let error as DevinError {
+            XCTAssertEqual(error, .http(status: 409, problem: ProblemDetail(status: 409, title: "Conflict", detail: "Session devin-jkl012 has exited and cannot be resumed")))
+            XCTAssertEqual(error.errorDescription, "Session devin-jkl012 has exited and cannot be resumed")
+        } catch {
+            XCTFail("unexpected \(error)")
+        }
     }
 
     func testAllMessagesFollowsCursor() async throws {
@@ -218,6 +446,78 @@ final class DevinClientTests: XCTestCase {
         XCTAssertEqual(transport.requests.count, 2)
         let second = URLComponents(url: transport.requests[1].url!, resolvingAgainstBaseURL: false)!
         XCTAssertTrue(second.queryItems!.contains(URLQueryItem(name: "after", value: "c1")))
+    }
+
+    func testListAttachmentsDecodesSpecArray() async throws {
+        transport.stub(json: Fixtures.attachmentsArray)
+
+        let attachments = try await client.attachments(org: "org-xyz", id: "devin-abc123")
+
+        XCTAssertEqual(transport.lastRequest.httpMethod, "GET")
+        XCTAssertEqual(transport.lastRequest.url?.path, "/v3/organizations/org-xyz/sessions/devin-abc123/attachments")
+        XCTAssertEqual(transport.lastRequest.value(forHTTPHeaderField: "Authorization"), "Bearer cog_test")
+
+        XCTAssertEqual(attachments.map(\.id), ["att-1", "att-2", "att-3", "att-4"])
+        XCTAssertEqual(attachments[0].source, .user)
+        XCTAssertEqual(attachments[0].contentType, "image/png")
+        XCTAssertNil(attachments[1].contentType)
+        XCTAssertEqual(attachments[1].source, .devin)
+    }
+
+    func testListAttachmentsToleratesPageEnvelope() async throws {
+        transport.stub(json: Fixtures.attachmentsPage)
+        let attachments = try await client.attachments(org: "org-xyz", id: "devin-abc123")
+        XCTAssertEqual(attachments.count, 4)
+    }
+
+    func testAttachmentKindFromContentTypeOrExtension() async throws {
+        transport.stub(json: Fixtures.attachmentsArray)
+        let attachments = try await client.attachments(org: "org-xyz", id: "devin-abc123")
+
+        XCTAssertTrue(attachments[0].isImage, "image/png")
+        XCTAssertFalse(attachments[1].isImage, "no content type, .log extension")
+        XCTAssertTrue(attachments[2].isImage, "octet-stream falls back to the .HEIC extension")
+        XCTAssertEqual(attachments[2].fileExtension, "heic")
+        XCTAssertFalse(attachments[3].isImage, "unknown non-image type")
+        XCTAssertEqual(attachments[3].fileExtension, "bin", "extension falls back to the URL when the name has none")
+    }
+
+    func testAttachmentDataSendsBearerToAPIHostOnly() async throws {
+        transport.stub(json: Fixtures.attachmentsArray)
+        let attachments = try await client.attachments(org: "org-xyz", id: "devin-abc123")
+
+        transport.stub(json: "PNGBYTES")
+        let data = try await client.attachmentData(attachments[0])
+        XCTAssertEqual(data, Data("PNGBYTES".utf8))
+        XCTAssertEqual(transport.lastRequest.url?.absoluteString,
+                       "https://api.devin.ai/v3/organizations/org-xyz/attachments/0f3c-uuid/screenshot.png")
+        XCTAssertEqual(transport.lastRequest.value(forHTTPHeaderField: "Authorization"), "Bearer cog_test")
+        XCTAssertEqual(transport.lastRequest.value(forHTTPHeaderField: "Accept"), "*/*")
+
+        transport.stub(json: "HEIC")
+        _ = try await client.attachmentData(attachments[2])
+        XCTAssertEqual(transport.lastRequest.url?.absoluteString,
+                       "https://api.devin.ai/v3/organizations/org-xyz/attachments/77e2-uuid/photo.HEIC",
+                       "relative URLs resolve against the base URL")
+        XCTAssertEqual(transport.lastRequest.value(forHTTPHeaderField: "Authorization"), "Bearer cog_test")
+
+        transport.stub(json: "BIN")
+        _ = try await client.attachmentData(attachments[3])
+        XCTAssertEqual(transport.lastRequest.url?.absoluteString, "https://cdn.example.com/design.bin")
+        XCTAssertNil(transport.lastRequest.value(forHTTPHeaderField: "Authorization"), "token never leaves the API host")
+    }
+
+    func testAttachmentDataMapsErrors() async throws {
+        transport.stub(json: Fixtures.attachmentsArray)
+        let attachments = try await client.attachments(org: "org-xyz", id: "devin-abc123")
+
+        transport.stub(404, json: #"{"status": 404, "title": "Not Found", "detail": "gone"}"#)
+        do {
+            _ = try await client.attachmentData(attachments[1])
+            XCTFail("expected notFound")
+        } catch DevinError.notFound(let problem) {
+            XCTAssertEqual(problem?.detail, "gone")
+        }
     }
 
     func testListArchivedSessions() async throws {
@@ -379,6 +679,126 @@ final class DevinClientTests: XCTestCase {
         }
     }
 
+    // MARK: pr-reviews
+
+    private let prURL = URL(string: "https://github.com/acme/api/pull/42")!
+
+    func testRequestPRReviewPostsURL() async throws {
+        transport.stub(json: Fixtures.prReviewPending)
+        let review = try await client.requestPRReview(org: "org-xyz", prURL: prURL)
+
+        XCTAssertEqual(transport.lastRequest.httpMethod, "POST")
+        XCTAssertEqual(transport.lastRequest.url?.path, "/v3/organizations/org-xyz/pr-reviews")
+        XCTAssertNil(transport.lastRequest.url?.query)
+        XCTAssertEqual(transport.lastRequest.value(forHTTPHeaderField: "Authorization"), "Bearer cog_test")
+        XCTAssertEqual(transport.lastRequest.value(forHTTPHeaderField: "Content-Type"), "application/json")
+        XCTAssertEqual(transport.lastRequest.bodyJSON["pr_url"] as? String, "https://github.com/acme/api/pull/42")
+        XCTAssertEqual(transport.lastRequest.bodyJSON.count, 1)
+
+        XCTAssertEqual(review.status, .pending)
+        XCTAssertFalse(review.isFinished)
+        XCTAssertEqual(review.repoPath, "github.com/acme/api")
+        XCTAssertEqual(review.prNumber, 42)
+        XCTAssertEqual(review.shortSHA, "abc123d")
+        XCTAssertEqual(review.createdAt, Date(timeIntervalSince1970: 1_788_343_200), "created_at is an ISO-8601 string here")
+        XCTAssertEqual(review.statusSummary, "Queued")
+    }
+
+    func testPRReviewBuildsQuery() async throws {
+        transport.stub(json: Fixtures.prReviewCompleted)
+        let review = try await client.prReview(org: "org-xyz", prURL: prURL, commitSHA: "abc123d")
+
+        XCTAssertEqual(transport.lastRequest.httpMethod, "GET")
+        XCTAssertNil(transport.lastRequest.httpBody)
+        let url = transport.lastRequest.url!
+        XCTAssertEqual(url.path, "/v3/organizations/org-xyz/pr-reviews")
+        let items = URLComponents(url: url, resolvingAgainstBaseURL: false)!.queryItems!
+        XCTAssertEqual(items, [
+            URLQueryItem(name: "pr_url", value: "https://github.com/acme/api/pull/42"),
+            URLQueryItem(name: "commit_sha", value: "abc123d"),
+        ])
+        XCTAssertEqual(review.status, .completed)
+        XCTAssertTrue(review.isFinished)
+
+        transport.stub(json: Fixtures.prReviewCompleted)
+        _ = try await client.prReview(org: "org-xyz", prURL: prURL)
+        let second = URLComponents(url: transport.lastRequest.url!, resolvingAgainstBaseURL: false)!.queryItems!
+        XCTAssertFalse(second.contains { $0.name == "commit_sha" }, "nil commit_sha is omitted so the server resolves the head")
+    }
+
+    func testLatestPRReviewFoldsNotFoundIntoNil() async throws {
+        transport.stub(404, json: Fixtures.problem404PRReview)
+        let none = try await client.latestPRReview(org: "org-xyz", prURL: prURL)
+        XCTAssertNil(none)
+
+        transport.stub(403, json: Fixtures.problem403)
+        do {
+            _ = try await client.latestPRReview(org: "org-xyz", prURL: prURL)
+            XCTFail("403 must still surface")
+        } catch let error as DevinError {
+            guard case .forbidden = error else { return XCTFail("expected forbidden, got \(error)") }
+        }
+    }
+
+    func testPRReviewUnknownStatusDecodesAsNilButKeepsRaw() async throws {
+        transport.stub(json: Fixtures.prReviewUnknownStatus)
+        let review = try await client.prReview(org: "org-xyz", prURL: prURL)
+        XCTAssertNil(review.status)
+        XCTAssertEqual(review.rawStatus, "brand_new_status")
+        XCTAssertFalse(review.isFinished, "unknown statuses keep polling until maxPolls")
+        XCTAssertEqual(review.statusSummary, "Brand New Status")
+        XCTAssertEqual(review.createdAt, Date(timeIntervalSince1970: 1_788_343_200.25))
+    }
+
+    func testPollPRReviewStopsAtTerminalStatus() async throws {
+        transport.stub(json: Fixtures.prReviewPending)
+        transport.stub(json: Fixtures.prReviewRunning)
+        transport.stub(json: Fixtures.prReviewCompleted)
+        transport.stub(json: Fixtures.prReviewCompleted) // must never be consumed
+
+        var seen: [PRReviewStatus?] = []
+        for try await review in client.pollPRReview(org: "org-xyz", prURL: prURL, commitSHA: "abc123d", every: .milliseconds(1)) {
+            seen.append(review.status)
+        }
+
+        XCTAssertEqual(seen, [.pending, .running, .completed])
+        XCTAssertEqual(transport.requests.count, 3)
+        for request in transport.requests {
+            let items = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)!.queryItems!
+            XCTAssertTrue(items.contains(URLQueryItem(name: "commit_sha", value: "abc123d")), "every poll pins the same commit")
+        }
+    }
+
+    func testPollPRReviewGivesUpAfterMaxPolls() async throws {
+        for _ in 0..<5 { transport.stub(json: Fixtures.prReviewRunning) }
+
+        var count = 0
+        for try await _ in client.pollPRReview(org: "org-xyz", prURL: prURL, every: .milliseconds(1), maxPolls: 3) {
+            count += 1
+        }
+
+        XCTAssertEqual(count, 3)
+        XCTAssertEqual(transport.requests.count, 3)
+    }
+
+    func testPollPRReviewPropagatesErrors() async {
+        transport.stub(json: Fixtures.prReviewPending)
+        transport.stub(429, json: "{}", headers: ["Retry-After": "3"])
+
+        var seen: [PRReviewStatus?] = []
+        do {
+            for try await review in client.pollPRReview(org: "org-xyz", prURL: prURL, every: .milliseconds(1)) {
+                seen.append(review.status)
+            }
+            XCTFail("expected error")
+        } catch let error as DevinError {
+            XCTAssertEqual(error, .rateLimited(retryAfter: 3))
+        } catch {
+            XCTFail("wrong error type: \(error)")
+        }
+        XCTAssertEqual(seen, [.pending], "snapshots before the failure are still delivered")
+    }
+
     func testMeDecodesOrg() async throws {
         transport.stub(json: Fixtures.selfPAT)
         let me = try await client.me()
@@ -395,6 +815,37 @@ final class DevinClientTests: XCTestCase {
         let page = try await client.playbooks(org: "org-xyz")
         XCTAssertEqual(page.items.first?.title, "Fix CI")
         XCTAssertEqual(page.items.first?.macro, "!fixci")
+        XCTAssertEqual(page.items.first?.accessType, .org)
+    }
+
+    func testPlaybookDetailBuildsURLAndDecodes() async throws {
+        transport.stub(json: Fixtures.playbookDetail)
+        let playbook = try await client.playbook(org: "org-xyz", id: "playbook-1")
+
+        XCTAssertEqual(transport.lastRequest.httpMethod, "GET")
+        XCTAssertEqual(transport.lastRequest.url?.path, "/v3/organizations/org-xyz/playbooks/playbook-1")
+        XCTAssertNil(transport.lastRequest.url?.query)
+        XCTAssertNil(transport.lastRequest.httpBody)
+        XCTAssertEqual(transport.lastRequest.value(forHTTPHeaderField: "Authorization"), "Bearer cog_test")
+        XCTAssertEqual(transport.lastRequest.value(forHTTPHeaderField: "Accept"), "application/json")
+
+        XCTAssertEqual(playbook.playbookID, "playbook-1")
+        XCTAssertEqual(playbook.title, "Fix CI")
+        XCTAssertEqual(playbook.macro, "!fixci")
+        XCTAssertTrue(playbook.body.hasPrefix("# Fix CI\n\n1. Run the failing job locally."))
+        XCTAssertTrue(playbook.body.hasSuffix("```sh\nswift test\n```"))
+        XCTAssertEqual(playbook.updatedAt, Date(timeIntervalSince1970: 1_756_886_400))
+        XCTAssertNil(playbook.accessType, "unknown access_type must decode as nil, not fail")
+    }
+
+    func testPlaybookDetailNotFound() async throws {
+        transport.stub(404, json: #"{"status": 404, "title": "Not Found", "detail": "Playbook not found", "type": "about:blank"}"#)
+        do {
+            _ = try await client.playbook(org: "org-xyz", id: "playbook-missing")
+            XCTFail("expected notFound")
+        } catch DevinError.notFound(let problem) {
+            XCTAssertEqual(problem?.detail, "Playbook not found")
+        }
     }
 
     func testMembersBuildsQueryAndDecodes() async throws {

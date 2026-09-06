@@ -94,14 +94,20 @@ public struct DevinClient: Sendable {
         return all
     }
 
-    public func send(message: String, org: String, id: String) async throws {
-        struct Body: Encodable { let message: String }
-        try await requestIgnoringBody(.post, "/v3/organizations/\(org)/sessions/\(id)/messages", body: Body(message: message))
+    /// `attachmentURLs` are the `url`s returned by `upload(data:filename:mime:org:)`; nil/empty omits the key.
+    public func send(message: String, attachmentURLs: [URL]? = nil, org: String, id: String) async throws {
+        struct Body: Encodable {
+            let message: String
+            let attachmentURLs: [URL]?
+            enum CodingKeys: String, CodingKey { case message, attachmentURLs = "attachment_urls" }
+        }
+        let urls = (attachmentURLs?.isEmpty ?? true) ? nil : attachmentURLs
+        try await requestIgnoringBody(.post, "/v3/organizations/\(org)/sessions/\(id)/messages", body: Body(message: message, attachmentURLs: urls))
     }
 
     public func attachments(org: String, id: String) async throws -> [SessionAttachment] {
-        let page: Page<SessionAttachment> = try await request(.get, "/v3/organizations/\(org)/sessions/\(id)/attachments")
-        return page.items
+        let list: SessionAttachmentList = try await request(.get, "/v3/organizations/\(org)/sessions/\(id)/attachments")
+        return list.items
     }
 
     // MARK: Playbooks
@@ -166,7 +172,7 @@ public struct DevinClient: Sendable {
         _ = try await perform(makeRequest(method, path, bodyData: try encoder.encode(body)))
     }
 
-    private func perform(_ request: URLRequest) async throws -> Data {
+    func perform(_ request: URLRequest) async throws -> Data {
         let (data, response): (Data, HTTPURLResponse)
         do {
             (data, response) = try await transport.send(request)
@@ -191,7 +197,7 @@ public struct DevinClient: Sendable {
         return data
     }
 
-    private func decode<T: Decodable>(_ data: Data) throws -> T {
+    func decode<T: Decodable>(_ data: Data) throws -> T {
         do {
             return try decoder.decode(T.self, from: data)
         } catch {

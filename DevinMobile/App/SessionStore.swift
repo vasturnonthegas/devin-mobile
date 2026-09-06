@@ -106,6 +106,7 @@ final class SessionStore {
             }
             lastRefreshed = .now
             error = nil
+            publishSnapshot()
         case .failure(let e):
             error = e
         }

@@ -17,6 +17,8 @@ struct SettingsView: View {
                     }
                 }
 
+                NotificationSettingsSection()
+
                 Section("Links") {
                     Link(destination: URL(string: "https://app.devin.ai")!) {
                         Label("Open Devin web app", systemImage: "safari")

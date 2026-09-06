@@ -30,13 +30,24 @@ Sign in with a PAT (`cog_…`, Devin → Settings → Devin API). Enterprise PAT
 ```
 DevinKit (no UI, platform-agnostic, unit-tested with MockTransport)
   Client/   DevinClient (async/await, Bearer, RFC 9457 → DevinError), HTTPTransport (injectable)
-  Models/   Session, SessionMessage, Playbook, Principal, Page<T>, NewSessionRequest/SessionQuery
+  Models/   Session, SessionMessage, Playbook, Principal, Page<T>, NewSessionRequest/SessionQuery, JSONValue
   Storage/  CredentialStore protocol; KeychainCredentialStore (iOS), InMemoryCredentialStore (tests/previews)
+  Sharing/  AppGroup (ids shared with extensions), DeepLink (devinmobile:// URLs), SessionSnapshot (last-known buckets,
+            + `changes(since:)` bucket diff),
+            WidgetContent (signed-out / awaiting-first-load / sessions, from Keychain + snapshot)
 
 DevinMobile (SwiftUI, iOS 17, @Observable + @MainActor, no third-party deps)
-  App/          AppModel (auth state machine), SessionStore (list + polling), RecentRepos
+  App/          AppModel (auth state machine), SessionStore (list + polling), RecentRepos,
+                DeepLinkRouter + DeepLinkNavigation (URL scheme → inbox navigation),
+                BackgroundRefresh (BGAppRefreshTask) + SessionNotifier (local notifications) +
+                NotificationDelegate (UNUserNotificationCenter delegate, owns the DeepLinkRouter),
+                WidgetTimeline (publishes SessionSnapshot + reloads WidgetKit)
   Features/     Onboarding, Inbox, SessionDetail (+ SessionDetailModel), NewSession, Settings
-  Support/      StatusBadge, PullRequestLink
+  Support/      StatusBadge, PullRequestLink (+ PullRequestStateBadge, ExternalLink),
+                Markdown/ (MarkdownDocument block tree + MarkdownView)
+
+DevinWidget (WidgetKit extension, `ai.devin.mobile.widget`, same App Group; embedded in the app)
+  NeedsYouWidget (small + medium): "N sessions need you" + top 3 rows → devinmobile://session/<id>
 ```
 
 Rules of thumb that the existing code follows:
@@ -54,10 +65,66 @@ Rules of thumb that the existing code follows:
 - **Member names are in-memory only.** `MemberDirectory` (DevinKit actor) fetches the whole
   members list once per launch and caches `user_id → OrgMember`; a 403 is sticky and the inbox
   simply omits owner chips (shown in Everyone scope only). Nothing about members is persisted.
+- **Wake-on-message.** Per the spec, `POST …/sessions/{id}/messages` "will automatically resume
+  [the session] if suspended" (`suspended → resuming → running`), so the composer stays enabled
+  for every `suspended` session regardless of `status_detail`. `exit` (VM destroyed: terminated or
+  created with `resumable: false`) and `error` sessions cannot receive messages, so the composer is
+  replaced by an explanation. `Session.messaging` (`Session+Messaging.swift`) is the single source
+  of truth; `SessionResponse` has no `resumable` flag, so a disposable session that is still
+  `suspended` looks wakeable until the API rejects the message (409) — that error is shown as-is.
 - **Simulator without a PAT.** Launch with `-MockAPI` (DEBUG only) to run against an in-process
   fake API (`DevinMobile/Support/MockAPI.swift`, 130 sessions) backed by `InMemoryCredentialStore`.
+  `POST …/messages` to a suspended mock session flips it to `resuming`; to an exited one returns 409.
+  `POST …/sessions` appends to an in-memory `created` list (served by list + detail for the rest of
+  the launch); `…/insights` has analysis for every third session and "arrives" 5 s after `generate`.
+- **Insights are generated, not fetched.** `GET …/sessions/{id}/insights` returns `analysis: null`
+  until `POST …/insights/generate` has run server-side, so `SessionInsightsModel` polls the GET every
+  4 s (≤ 150 s) after Generate. `SessionInsightsPanel` is shown only for non-`working` sessions; a 403
+  on either call is sticky and removes the panel (`isForbidden`). "Use this prompt" opens
+  `NewSessionView(initialPrompt:)` via `.suggestedPromptSessionFlow` and pushes the created session.
+- **Attachment bytes go through `DevinClient.attachmentData`.** `GET …/sessions/{id}/attachments`
+  returns a bare array (not the cursor envelope). Attachment URLs point at the API, which 307s to a
+  presigned URL; the client sends the Bearer token only to `baseURL.host` and URLSession drops it on
+  the redirect. Never hand an attachment URL to `AsyncImage`/`Link` — it would 401 or leak the token.
+  Downloads are cached per `SessionDetailView` (`SessionAttachmentsModel`) and files land in `tmp/`.
 - **Credentials only in Keychain** (`ai.devin.mobile` / `credentials`). Nothing is stored until
   `GET /v3/self` + `GET /sessions?first=1` both succeed.
+- **One App Group, `group.ai.devin.mobile`, is the only shared identifier** (`AppGroup.identifier`).
+  It is the App Groups entitlement *and* the Keychain access group (iOS accepts app groups there
+  without the team prefix), so `AppGroup.credentialStore` and `AppGroup.defaults` are what a widget
+  / intent / share extension uses — every extension target must list the same group in `project.yml`.
+  At launch `adoptingCredentials(from:)` moves a pre-App-Group Keychain item into the shared store and
+  falls back to the private store if the entitlement is missing (`errSecMissingEntitlement`).
+- **`SessionSnapshot` is the extension-facing view of the inbox.** `SessionStore` writes it to
+  `AppGroup.defaults` after every successful *unfiltered* refresh (ids, titles, buckets, no token).
+  Extensions read it instead of calling the API; anything richer needs its own story.
+- **A snapshot exists only while signed in.** `WidgetTimeline` (app) saves it on refresh and
+  removes it in `AppModel.signOut`, so `WidgetContent.resolve` treats a present snapshot as proof of
+  a signed-in user even when the shared Keychain can't be read (locked device, `-MockAPI`'s in-memory
+  credentials). Keychain credentials without a snapshot = "open Devin to load"; neither = signed out.
+  `WidgetCenter.reloadAllTimelines()` is called only when the rows changed or the last publish is
+  ≥ 5 min old — the 10 s poll must not eat the WidgetKit refresh budget. The snapshot (and so the
+  widget) counts the whole unfiltered list, not the inbox's Mine/Everyone scope.
+- **Deep links are `devinmobile://session/<id>`** (`DeepLink`; extensions build URLs with
+  `DeepLink.url`). `DevinMobileApp.onOpenURL` parks the link in `DeepLinkRouter`; the inbox's
+  `.followsDeepLinks` replaces the navigation path once signed in, fetching the session by ID when it
+  isn't on the loaded pages. `-OpenURL <url>` (DEBUG) simulates a cold start alongside `-MockAPI`.
+- **Background refresh = one poll of page 1, diffed against the snapshot.** `BackgroundRefresh`
+  (`BGAppRefreshTask` `ai.devin.mobile.refresh`, ~15 min, bound with `.backgroundTask(.appRefresh)`
+  and re-armed on every run and whenever a signed-in app backgrounds) fetches the unfiltered first
+  page, builds a `SessionSnapshot`, and posts one local notification per
+  `SessionSnapshot.notableChanges(since:)` — `working → needsYou` and `* → finished`, only for
+  sessions present in both snapshots (DevinKit, unit-tested). The new snapshot is saved *after*
+  the diff, so a failed fetch keeps the baseline. Notification requests are keyed `session-<id>`
+  (a later transition replaces the earlier banner); more than `SessionNotifier.summaryThreshold`
+  changes collapse into one summary. `userInfo["deepLink"]` carries the `devinmobile://` URL and
+  `NotificationDelegate` (a `@UIApplicationDelegateAdaptor`, set as the center's delegate in
+  `willFinishLaunching`) feeds taps into the same `DeepLinkRouter` as `onOpenURL`. The permission
+  prompt lives in onboarding (toggle, requested right after sign-in) and Settings
+  (`NotificationSettingsSection`). Simulate a run in the debugger with
+  `e -l objc -- (void)[[BGTaskScheduler sharedScheduler] _simulateLaunchForTaskWithIdentifier:@"ai.devin.mobile.refresh"]`,
+  or launch with `-MockAPI -SimulateBackgroundRefresh` (DEBUG), which flips three mock sessions
+  4 s after launch and runs one pass. `BGTaskScheduler.submit` fails silently in the Simulator.
 - Swift 5 language mode with `SWIFT_STRICT_CONCURRENCY=complete` — keep things `Sendable`.
 - Comments are sparse by design. Don't document the diff; document the invariant.
 
@@ -70,9 +137,10 @@ session-only vs saved secret) and:
    path kicks in; verify that flow too.
 2. Inbox → check every session decodes. Likely soft spots: `created_at`/`updated_at` are epoch
    **integers** (seconds) per the OpenAPI spec; the decoder accepts seconds or ISO-8601 — confirm
-   the values aren't milliseconds. Check `pull_requests[].pr_state` values against `PullRequestLink`.
-3. Detail → transcript order, markdown rendering (`Text(LocalizedStringKey(...))` is a cheap
-   markdown renderer; long Devin messages with code blocks may look bad → see §4.3).
+   the values aren't milliseconds. Check `pull_requests[].pr_state` values against `PullRequestState`
+   (unknown strings render as a neutral badge, so nothing breaks — but add new cases if the API grows).
+3. Detail → transcript order, markdown rendering (`MarkdownView` regroups Foundation's `.full`
+   CommonMark parse by `presentationIntent`; check real Devin messages for constructs it flattens).
 4. Reply to a waiting session, archive one, terminate one, create one.
 5. Log anything that's wrong in a `## Known bugs` section here and fix in one PR.
 
@@ -105,26 +173,31 @@ truth; the summary below was taken from it).
 
 ### 4.2 Session detail parity
 
-- [ ] **Attachments** — list (`GET …/sessions/{id}/attachments`, already in `DevinClient`) and
-      render images inline / QuickLook for others. Upload from Photos/Files/camera via
+- [x] **Attachments (view)** — listed per session; images inline (tap → full-screen zoom/share),
+      other files open in QuickLook. Attachments are pinned under the first message quoting their
+      URL, otherwise shown in the header card.
+- [ ] **Attachments (upload)** — from Photos/Files/camera via
       `POST …/attachments` (multipart `file`) then pass `attachment_urls` to
       `POST …/messages` or to session creation. This is the most mobile-native win
       ("send Devin a screenshot of the bug").
-- [ ] **Structured output** — `SessionResponse.structured_output` (JSON object). Render as a
-      collapsible tree / pretty JSON with copy.
-- [ ] **Session insights** — `GET …/sessions/{id}/insights` (+ `POST …/insights/generate`):
-      issues, timeline, action items, suggested prompt. Web shows this as a summary panel.
-      "Suggested prompt → start new session" is a nice one-tap flow.
-- [ ] **Pull request states** — poll `pull_requests[].pr_state`; show merged/closed badges;
-      deep-link to GitHub app if installed.
-- [ ] **Devin Review** — `POST/GET …/pr-reviews` to trigger/see review status for a PR URL.
-- [ ] **Better transcript rendering** — replace `LocalizedStringKey` markdown with a proper
-      renderer (AttributedString(markdown:) with `.full` syntax, or a small dependency such as
-      `swift-markdown-ui` if a dependency is acceptable — ask). Code blocks need monospaced,
-      horizontally scrollable rendering. Messages can be long; consider collapsing > N lines.
-- [ ] **Wake a sleeping session** — sending a message to a suspended session resumes it (that's what
-      the composer placeholder promises). Verify the API actually does this for `suspended`
-      sessions; if not, hide the composer for non-resumable ones.
+- [x] **Structured output** — `Session.structuredOutput` is an opaque `JSONValue` (schema is
+      caller-defined); `StructuredOutputSection` renders a collapsible tree / pretty JSON with copy.
+- [x] **Session insights** — `GET …/sessions/{id}/insights` (+ `POST …/insights/generate`):
+      `SessionInsightsPanel` (collapsible, in the detail header) shows issues, timeline, action
+      items and the suggested prompt; "Use this prompt" prefills New Session. Not yet exercised
+      against the live API (no PAT).
+- [x] **Pull request states** — `PullRequestState` typed from `pr_state`, badges via
+      `PullRequestStateBadge`; `ExternalLink.open` prefers the Universal-Link app (GitHub) over Safari.
+- [x] **Devin Review** — `POST/GET …/pr-reviews` to trigger/see review status for a PR URL.
+      `PullRequestReviewRow` polls `pollPRReview` (pinned to the returned `commit_sha`) until a
+      terminal status; 404 = "not reviewed", 403 hides the row's controls.
+- [x] **Better transcript rendering** — `MarkdownMessageBody` renders headings, lists, quotes,
+      tables, links, inline code and fenced code (monospaced, horizontally scrollable, copy button)
+      from `AttributedString(markdown:)` `.full` syntax, no dependency. Messages over ~14 lines or
+      1 200 characters start collapsed behind "Show more" (`MarkdownDocument.isLong`).
+- [x] **Wake a sleeping session** — confirmed against the spec: messaging a `suspended` session
+      resumes it. `Session.messaging` drives the composer (wake hint for `suspended`, replaced by
+      an explanation for `exit`/`error`). Not yet exercised against the live API (no PAT).
 - [ ] **Rename** — web allows editing title. No `PATCH session` exists in v3 as of the last spec
       pull; check again before promising it.
 
@@ -136,8 +209,11 @@ truth; the summary below was taken from it).
       keep recents as a "pinned" section.
 - [ ] **Knowledge & secrets attach** — `knowledge_ids` (`GET …/knowledge/notes`,
       `…/knowledge/folders`) and `secret_ids` (`GET …/secrets`) on `SessionCreateRequest`.
-- [ ] **Structured output schema** — `structured_output_schema` text field (advanced section).
-- [ ] **`bypass_approval`, `resumable`, `platform`** toggles in an "Advanced" disclosure.
+- [x] **Structured output schema** — `structured_output_schema` text field (advanced section).
+      `StructuredOutputSchema.parse` (DevinKit) enforces the spec's constraints — JSON object,
+      ≤ 64 KB, no external `$ref` — and its error blocks Start with a message under the field.
+- [x] **`bypass_approval`, `resumable`, `platform`** toggles in an "Advanced" disclosure
+      (`NewSessionAdvancedOptions`). Fields are encoded only when they differ from the API default.
 - [ ] **Attachments** on create (see 4.2).
 - [ ] **Session links** (`session_links`) — link to a parent/related session.
 - [ ] **Prompt templates** — playbook body preview (`GET …/playbooks/{id}`) before starting.
@@ -159,11 +235,16 @@ don't crash. `DevinError.forbidden` already exists.
 
 ### 4.5 Mobile-native (not in the web UI, but the reason this app exists)
 
-- [ ] **Local notifications**: `BGAppRefreshTask` every ~15 min; diff buckets vs last poll; notify on
-      `working → needsYou` and `→ finished`. Store last-known buckets in the app group container.
-- [ ] **Widget** (WidgetKit, App Group + shared Keychain access group — `KeychainCredentialStore`
-      already takes an `accessGroup`): "Needs you: N" + top 3 sessions; tap → deep link
-      `devinmobile://session/<id>`. Add URL scheme handling in `DevinMobileApp`.
+- [x] **Local notifications**: `BackgroundRefresh` (`BGAppRefreshTask` every ~15 min) diffs the
+      `SessionSnapshot` in the App Group and `SessionNotifier` posts on `working → needsYou` and
+      `→ finished`; tap → `devinmobile://session/<id>`. Not yet observed against the live API (no
+      PAT); iOS decides the real cadence.
+- [x] **Shared plumbing** — App Group entitlement, `AppGroup.credentialStore` (Keychain access
+      group), `SessionSnapshot` in the group container, `devinmobile://session/<id>` handled from
+      cold start. Extensions still need their own `targets:` entry in `project.yml`.
+- [x] **Widget** (WidgetKit): `DevinWidget/` target, small + medium `NeedsYouWidget` fed by
+      `WidgetContent.resolve` (never the API); rows link to `SessionSnapshot.Entry.deepLink.url`.
+      Not yet seen on a real home screen — only the Simulator.
 - [ ] **App Intents / Siri / Shortcuts**: `StartDevinSessionIntent(prompt, repo?)`,
       `ReplyToDevinIntent(session, message)`, `WhatIsDevinWaitingOnIntent`. Reuse `DevinKit`
       directly from the intent extension.
@@ -182,7 +263,13 @@ don't crash. `DevinError.forbidden` already exists.
   `warning:` and `error:`, so fix warnings before pushing.
 - New Swift files under `DevinMobile/` are picked up automatically by XcodeGen (`sources: DevinMobile`);
   no `project.yml` edits needed unless you add a target (widget/intents/share extension — those
-  need new `targets:` entries plus entitlements for App Groups + Keychain sharing).
+  need new `targets:` entries plus an `entitlements:` block listing `group.ai.devin.mobile`; copy
+  `DevinWidget`). Extension sources live in their own top-level folder (`DevinWidget/`), never under
+  `DevinMobile/`, which the app target compiles wholesale. `Info.plist` / `.entitlements` files are
+  generated by XcodeGen from `project.yml`; don't commit them.
+- Simulator builds that must exercise the App Group (widget, shared Keychain) need entitlements, so
+  build them *without* `CODE_SIGNING_ALLOWED=NO` (ad-hoc signing needs no team). CI's unsigned build
+  only proves the targets compile.
 - Don't add third-party packages without asking; the app is intentionally dependency-free.
 - Never log tokens. `DevinClient` builds the `Authorization` header in one place — keep it that way.
 - If the OpenAPI spec disagrees with this doc, the spec wins. Re-fetch it at session start.
@@ -190,6 +277,7 @@ don't crash. `DevinError.forbidden` already exists.
 ## 6. Open questions for the owner (tracked in #14)
 
 1. Is a small markdown dependency acceptable for transcript rendering, or stay dependency-free?
+   (B1 shipped dependency-free on Foundation's CommonMark parser; revisit only if it falls short.)
 2. Push notifications: OK to run a relay server, or stick with background refresh?
 3. Which org-management screens (4.4) matter on mobile? Suggested: none until 4.1–4.3 + 4.5 ship.
 4. App identity: bundle ID is `ai.devin.mobile` and accent colour is a placeholder; final name/icon?

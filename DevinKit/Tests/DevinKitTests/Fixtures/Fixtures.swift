@@ -73,6 +73,59 @@ enum Fixtures {
     }
     """
 
+    /// Every PR state the UI models plus a future one and a `null` — both must render neutrally.
+    static let sessionWithPullRequests = """
+    {
+      "session_id": "devin-prs001",
+      "org_id": "org-xyz",
+      "status": "exit",
+      "status_detail": "finished",
+      "title": "Ship B4",
+      "url": "https://app.devin.ai/sessions/prs001",
+      "tags": [],
+      "pull_requests": [
+        {"pr_url": "https://github.com/acme/api/pull/42", "pr_state": "open"},
+        {"pr_url": "https://github.com/acme/api/pull/43", "pr_state": "draft"},
+        {"pr_url": "https://github.com/acme/api/pull/44", "pr_state": "MERGED"},
+        {"pr_url": "https://github.com/acme/api/pull/45", "pr_state": "closed"},
+        {"pr_url": "https://gitlab.com/acme/web/-/merge_requests/9", "pr_state": "locked_by_bot"},
+        {"pr_url": "https://example.com/review/77", "pr_state": null}
+      ],
+      "acus_consumed": 2,
+      "created_at": 1756800000,
+      "updated_at": 1756809000
+    }
+    """
+
+    /// Finished session carrying a `structured_output` object with every JSON type nested inside.
+    static let sessionStructuredOutput = """
+    {
+      "session_id": "devin-out001",
+      "org_id": "org-xyz",
+      "status": "exit",
+      "status_detail": "finished",
+      "title": "Triage flaky tests",
+      "url": "https://app.devin.ai/sessions/out001",
+      "tags": [],
+      "pull_requests": [],
+      "acus_consumed": 4,
+      "created_at": 1756800000,
+      "updated_at": 1756809000,
+      "structured_output": {
+        "summary": "3 flaky tests found",
+        "confidence": 0.85,
+        "total": 3,
+        "has_blockers": false,
+        "owner": null,
+        "issues": [
+          {"file": "Tests/LoginTests.swift", "line": 42, "reasons": ["timing", "shared state"]},
+          {"file": "Tests/Inbox\\"Tests\\".swift", "line": 7, "reasons": []}
+        ],
+        "meta": {}
+      }
+    }
+    """
+
     static let sessionParent = """
     {
       "session_id": "devin-parent",
@@ -239,8 +292,43 @@ enum Fixtures {
     }
     """
 
+    static let attachmentsArray = """
+    [
+      {"attachment_id": "att-1", "name": "screenshot.png", "source": "user",
+       "url": "https://api.devin.ai/v3/organizations/org-xyz/attachments/0f3c-uuid/screenshot.png", "content_type": "image/png"},
+      {"attachment_id": "att-2", "name": "crash.log", "source": "devin",
+       "url": "https://api.devin.ai/v3/organizations/org-xyz/attachments/8a1b-uuid/crash.log", "content_type": null},
+      {"attachment_id": "att-3", "name": "photo.HEIC", "source": "user",
+       "url": "/v3/organizations/org-xyz/attachments/77e2-uuid/photo.HEIC", "content_type": "application/octet-stream"},
+      {"attachment_id": "att-4", "name": "design", "source": "user",
+       "url": "https://cdn.example.com/design.bin", "content_type": "application/x-future-type; charset=binary"}
+    ]
+    """
+
+    static let attachmentsPage = """
+    {"items": \(attachmentsArray), "end_cursor": null, "has_next_page": false}
+    """
+
     static let sessionTags = """
     {"tags": ["bug", "auth", "Mobile Sprint 1"], "future_field": "ignored"}
+    """
+
+    static let attachmentUploaded = """
+    {
+      "attachment_id": "att-7f3a9c",
+      "name": "bug.png",
+      "url": "https://api.devin.ai/v3/organizations/org-xyz/attachments/7f3a9c1e-2b4d-4f6a-9c8e-1d2e3f4a5b6c/bug.png",
+      "content_type": "image/png",
+      "scan_status": "pending_future_value"
+    }
+    """
+
+    static let problem413Attachment = """
+    {"status": 413, "title": "Payload Too Large", "detail": "Attachments must be 25 MB or smaller", "type": "about:blank"}
+    """
+
+    static let problem409SessionEnded = """
+    {"status": 409, "title": "Conflict", "detail": "Session devin-jkl012 has exited and cannot be resumed", "type": "about:blank"}
     """
 
     static let problem422Tags = """
@@ -361,6 +449,24 @@ enum Fixtures {
     {"status": 403, "title": "Forbidden", "detail": "Missing permission: ViewOrgSessions", "type": "about:blank"}
     """
 
+    static let prReviewPending = """
+    {"status": "pending", "repo_path": "github.com/acme/api", "pr_number": 42,
+     "commit_sha": "abc123def4567890abc123def4567890abc123de", "created_at": "2026-09-02T10:00:00Z"}
+    """
+
+    static let prReviewRunning = prReviewPending.replacingOccurrences(of: "\"pending\"", with: "\"running\"")
+
+    static let prReviewCompleted = prReviewPending.replacingOccurrences(of: "\"pending\"", with: "\"completed\"")
+
+    static let prReviewUnknownStatus = """
+    {"status": "brand_new_status", "repo_path": "github.com/acme/api", "pr_number": 42,
+     "commit_sha": "abc123def4567890abc123def4567890abc123de", "created_at": "2026-09-02T10:00:00.250Z", "future_field": 1}
+    """
+
+    static let problem404PRReview = """
+    {"status": 404, "title": "Not Found", "detail": "No review found for commit abc123d", "type": "about:blank"}
+    """
+
     static let playbooksPage = """
     {
       "items": [
@@ -369,6 +475,23 @@ enum Fixtures {
       ],
       "end_cursor": null,
       "has_next_page": false
+    }
+    """
+
+    /// `access_type: "team"` is not in the spec's enum on purpose.
+    static let playbookDetail = """
+    {
+      "playbook_id": "playbook-1",
+      "title": "Fix CI",
+      "body": "# Fix CI\\n\\n1. Run the failing job locally.\\n2. Open a PR with the fix.\\n\\n```sh\\nswift test\\n```",
+      "macro": "!fixci",
+      "created_by": "user-1",
+      "updated_by": "user-2",
+      "created_at": 1756800000,
+      "updated_at": 1756886400,
+      "access_type": "team",
+      "org_id": "org-xyz",
+      "structured_output_schema": {"type": "object", "properties": {"fixed": {"type": "boolean"}}}
     }
     """
 }

@@ -7,6 +7,10 @@ struct InboxView: View {
 
     @State private var scope: InboxScopeModel
     @State private var path = NavigationPath()
+    // Split layout only. Selected by ID, not `Session`: polling rewrites rows and a value-hashed
+    // selection would silently stop matching the highlighted row.
+    @State private var selectedID: Session.ID?
+    @State private var columns = NavigationSplitViewVisibility.doubleColumn
     @State private var query = ""
     @State private var tab: InboxTab = .active
     @State private var showNewSession = false
@@ -20,62 +24,17 @@ struct InboxView: View {
         _members = State(initialValue: MemberLookup(client: store.client, orgID: store.orgID))
     }
 
+    /// iPad gets inbox + detail side by side; the idiom (not the size class) decides so multitasking
+    /// resizes collapse the split view instead of swapping navigation containers and losing state.
+    private var usesSplitLayout: Bool { UIDevice.current.userInterfaceIdiom == .pad }
+
     var body: some View {
-        NavigationStack(path: $path) {
-            scopedContent
-                .navigationTitle("Sessions")
-                .navigationDestination(for: Session.self) { session in
-                    // Keyed by ID so a deep link that replaces the top of the stack gets fresh detail state.
-                    SessionDetailView(store: store, sessionID: session.id)
-                        .id(session.id)
-                }
-                .searchable(text: $query, prompt: "Title, tag, or ID")
-                .refreshable { await store.refresh() }
-                .toolbar {
-                    ToolbarItem(placement: .topBarLeading) {
-                        Button { showSettings = true } label: {
-                            Label("Settings", systemImage: "gearshape")
-                        }
-                    }
-                    if tab == .active {
-                        ToolbarItem(placement: .topBarTrailing) {
-                            Button { showFilters = true } label: {
-                                Label("Filters", systemImage: store.filter.isEmpty
-                                      ? "line.3.horizontal.decrease.circle"
-                                      : "line.3.horizontal.decrease.circle.fill")
-                            }
-                        }
-                    }
-                    ToolbarItem(placement: .principal) {
-                        Picker("Scope", selection: $scope.scope) {
-                            ForEach(InboxScope.allCases) { scope in
-                                Text(scope.title).tag(scope)
-                            }
-                        }
-                        .pickerStyle(.segmented)
-                        .frame(maxWidth: 220)
-                        .disabled(!scope.isMineAvailable)
-                    }
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button { showNewSession = true } label: {
-                            Label("New session", systemImage: "plus")
-                        }
-                    }
-                }
-                .sheet(isPresented: $showFilters) {
-                    SessionFilterSheet(store: store)
-                }
-                .sheet(isPresented: $showNewSession) {
-                    NewSessionView(store: store) { created in
-                        path.append(created)
-                    }
-                }
-                .sheet(isPresented: $showSettings) {
-                    SettingsView()
-                }
-                .followsDeepLinks(store: store, path: $path)
-                // On the stack root so a session that flips while its detail is pushed still taps once.
-                .bucketChangeHaptics(for: store.sessions.filter(scope.includes))
+        Group {
+            if usesSplitLayout {
+                splitLayout
+            } else {
+                stackLayout
+            }
         }
         .task { store.startPolling() }
         .task { await scope.resolveIdentity() }
@@ -88,6 +47,90 @@ struct InboxView: View {
             @unknown default: break
             }
         }
+    }
+
+    private var stackLayout: some View {
+        NavigationStack(path: $path) {
+            inbox
+                .navigationDestination(for: Session.self) { session in
+                    // Keyed by ID so a deep link that replaces the top of the stack gets fresh detail state.
+                    SessionDetailView(store: store, sessionID: session.id)
+                        .id(session.id)
+                }
+                .followsDeepLinks(store: store, path: $path)
+        }
+    }
+
+    private var splitLayout: some View {
+        NavigationSplitView(columnVisibility: $columns) {
+            inbox
+                // 380 is the narrowest the sidebar's toolbar (scope picker + 4 buttons) fits without truncating.
+                .navigationSplitViewColumnWidth(min: 380, ideal: 420, max: 520)
+                .followsDeepLinks(store: store) { selectedID = $0.id }
+        } detail: {
+            InboxDetailColumn(store: store, selectedID: $selectedID)
+        }
+        .navigationSplitViewStyle(.balanced)
+    }
+
+    private func open(_ session: Session) {
+        if usesSplitLayout {
+            selectedID = session.id
+        } else {
+            path.append(session)
+        }
+    }
+
+    private var inbox: some View {
+        scopedContent
+            .navigationTitle("Sessions")
+            .searchable(text: $query, prompt: "Title, tag, or ID")
+            .refreshable { await store.refresh() }
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button { showSettings = true } label: {
+                        Label("Settings", systemImage: "gearshape")
+                    }
+                }
+                if tab == .active {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button { showFilters = true } label: {
+                            Label("Filters", systemImage: store.filter.isEmpty
+                                  ? "line.3.horizontal.decrease.circle"
+                                  : "line.3.horizontal.decrease.circle.fill")
+                        }
+                    }
+                }
+                ToolbarItem(placement: .principal) {
+                    Picker("Scope", selection: $scope.scope) {
+                        ForEach(InboxScope.allCases) { scope in
+                            Text(scope.title).tag(scope)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(maxWidth: 220)
+                    .disabled(!scope.isMineAvailable)
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { showNewSession = true } label: {
+                        Label("New session", systemImage: "plus")
+                    }
+                    .keyboardShortcut("n", modifiers: .command)
+                }
+            }
+            .sheet(isPresented: $showFilters) {
+                SessionFilterSheet(store: store)
+            }
+            .sheet(isPresented: $showNewSession) {
+                NewSessionView(store: store) { created in
+                    open(created)
+                }
+            }
+            .sheet(isPresented: $showSettings) {
+                SettingsView()
+            }
+            // On the stack root / sidebar so a session that flips while its detail is showing still taps once.
+            .bucketChangeHaptics(for: store.sessions.filter(scope.includes))
     }
 
     @ViewBuilder
@@ -117,6 +160,18 @@ struct InboxView: View {
     /// Owner chips only add information when rows can belong to other people.
     private var showsOwners: Bool { scope.effectiveScope == .everyone }
 
+    /// The sidebar has no `navigationDestination`; its rows are selected through the `List` binding
+    /// (`ForEach` tags them by `Session.ID`). A `NavigationLink` there would warn about a missing destination.
+    @ViewBuilder
+    private func row(for session: Session) -> some View {
+        let row = SessionRow(session: session, owner: showsOwners ? members.owner(of: session) : nil)
+        if usesSplitLayout {
+            row
+        } else {
+            NavigationLink(value: session) { row }
+        }
+    }
+
     @ViewBuilder
     private var content: some View {
         let groups = scope.filter(store.filtered(by: query))
@@ -140,24 +195,22 @@ struct InboxView: View {
             )
         } else {
             let prefetchIDs = Set(groups.flatMap(\.sessions).suffix(Self.prefetchWindow).map(\.id))
-            List {
+            List(selection: usesSplitLayout ? $selectedID : nil) {
                 ForEach(groups, id: \.bucket) { group in
                     Section {
                         ForEach(group.sessions) { session in
-                            NavigationLink(value: session) {
-                                SessionRow(session: session, owner: showsOwners ? members.owner(of: session) : nil)
-                            }
-                            .onAppear {
-                                if prefetchIDs.contains(session.id) {
-                                    Task { await store.loadMore() }
+                            row(for: session)
+                                .onAppear {
+                                    if prefetchIDs.contains(session.id) {
+                                        Task { await store.loadMore() }
+                                    }
                                 }
-                            }
-                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                Button("Archive", systemImage: "archivebox") {
-                                    Task { try? await store.archive(session) }
+                                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                    Button("Archive", systemImage: "archivebox") {
+                                        Task { try? await store.archive(session) }
+                                    }
+                                    .tint(.indigo)
                                 }
-                                .tint(.indigo)
-                            }
                         }
                     } header: {
                         HStack {

@@ -47,7 +47,8 @@ DevinMobile (SwiftUI, iOS 17, @Observable + @MainActor, no third-party deps)
                 WidgetTimeline (publishes SessionSnapshot + reloads WidgetKit),
                 SharedDraftFlow (pending SharedDraft → prefilled NewSessionView on activation),
                 SessionLiveActivity (the one pinned Live Activity: start/stop/update/refresh)
-  Features/     Onboarding, Inbox, SessionDetail (+ SessionDetailModel), NewSession (+ RepoPicker), Settings
+  Features/     Onboarding, Inbox (+ InboxDetailColumn for the iPad split view), SessionDetail (+ SessionDetailModel),
+                NewSession (+ RepoPicker), Settings
   Support/      StatusBadge, PullRequestLink (+ PullRequestStateBadge, ExternalLink),
                 Markdown/ (MarkdownDocument block tree + MarkdownView)
 
@@ -192,6 +193,16 @@ Rules of thumb that the existing code follows:
   `updatedAt + 20 min`, so a missed refresh renders "May be out of date". `Activity` is not `Sendable`:
   every ActivityKit call lives in a `nonisolated` helper keyed by session ID. The app's Info.plist needs
   `NSSupportsLiveActivities` (set in `project.yml`); the extension needs nothing extra.
+- **iPad = `NavigationSplitView`, iPhone = `NavigationStack`; the idiom decides, not the size class.**
+  `InboxView` keeps both containers behind one `inbox` column body; a multitasking resize collapses
+  the split view instead of swapping containers (which would drop navigation state). The sidebar
+  selects by `Session.ID` (a value-hashed `Session` selection stops matching once polling rewrites
+  the row) and has no `navigationDestination`, so rows are plain there and `NavigationLink`s only on
+  iPhone. `InboxDetailColumn` owns the detail column's stack — child / related-session links push
+  inside it and it resets on every selection change — and injects `dismissSplitDetail`, which
+  `SessionDetailView.close()` prefers over `dismiss` (the column root has nothing to pop). Deep links
+  use `followsDeepLinks(store:onSession:)` to set the selection. Hardware keyboard: ⌘N new session,
+  ⌘R focus the composer, ⌘↩ send (the send button's shortcut, so it obeys `canSend`).
 - Swift 5 language mode with `SWIFT_STRICT_CONCURRENCY=complete` — keep things `Sendable`.
 - Comments are sparse by design. Don't document the diff; document the invariant.
 
@@ -335,12 +346,14 @@ don't crash. `DevinError.forbidden` already exists.
       Push-to-start / remote updates wait for a relay (see below). Not yet seen on a real lock screen.
 - [ ] **Push via a relay** (optional, needs a server): tiny service that polls the API per user and
       sends APNs. Only worth it if background refresh proves too laggy.
-- [ ] **iPad / macOS (Catalyst or Designed-for-iPad)**: `NavigationSplitView` for inbox + detail.
-- [x] **Haptics + accessibility**: `bucketChangeHaptics(for:)` on the inbox `NavigationStack` root
-      taps once per poll that moves a session between buckets (`.error` for failed, `.warning` for
-      needs-you, `.success` for finished). `StatusBadge` is one VoiceOver element ("Needs you: Waiting
-      for you"), inbox rows are one stop each, and `DevinMobileUITests` runs Accessibility Inspector's
-      audit (`performAccessibilityAudit`) over the inbox and detail at default size and XXXL.
+- [x] **iPad**: `NavigationSplitView` for inbox + detail (both orientations, balanced columns) with
+      ⌘N / ⌘R / ⌘↩ keyboard shortcuts. macOS (Catalyst or Designed-for-iPad) is still open.
+- [x] **Haptics + accessibility**: `bucketChangeHaptics(for:)` on the inbox column (stack root on
+      iPhone, sidebar on iPad) taps once per poll that moves a session between buckets (`.error` for
+      failed, `.warning` for needs-you, `.success` for finished). `StatusBadge` is one VoiceOver element
+      ("Needs you: Waiting for you"), inbox rows are one stop each, and `DevinMobileUITests` runs
+      Accessibility Inspector's audit (`performAccessibilityAudit`) over the inbox and detail at default
+      size and XXXL.
 
 ## 5. Conventions for Devin sessions working here
 

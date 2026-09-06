@@ -36,7 +36,7 @@ DevinKit (no UI, platform-agnostic, unit-tested with MockTransport)
 DevinMobile (SwiftUI, iOS 17, @Observable + @MainActor, no third-party deps)
   App/          AppModel (auth state machine), SessionStore (list + polling), RecentRepos
   Features/     Onboarding, Inbox, SessionDetail (+ SessionDetailModel), NewSession, Settings
-  Support/      StatusBadge, PullRequestLink
+  Support/      StatusBadge, PullRequestLink, Markdown/ (MarkdownDocument block tree + MarkdownView)
 ```
 
 Rules of thumb that the existing code follows:
@@ -71,8 +71,8 @@ session-only vs saved secret) and:
 2. Inbox → check every session decodes. Likely soft spots: `created_at`/`updated_at` are epoch
    **integers** (seconds) per the OpenAPI spec; the decoder accepts seconds or ISO-8601 — confirm
    the values aren't milliseconds. Check `pull_requests[].pr_state` values against `PullRequestLink`.
-3. Detail → transcript order, markdown rendering (`Text(LocalizedStringKey(...))` is a cheap
-   markdown renderer; long Devin messages with code blocks may look bad → see §4.3).
+3. Detail → transcript order, markdown rendering (`MarkdownView` regroups Foundation's `.full`
+   CommonMark parse by `presentationIntent`; check real Devin messages for constructs it flattens).
 4. Reply to a waiting session, archive one, terminate one, create one.
 5. Log anything that's wrong in a `## Known bugs` section here and fix in one PR.
 
@@ -120,10 +120,10 @@ truth; the summary below was taken from it).
 - [x] **Devin Review** — `POST/GET …/pr-reviews` to trigger/see review status for a PR URL.
       `PullRequestReviewRow` polls `pollPRReview` (pinned to the returned `commit_sha`) until a
       terminal status; 404 = "not reviewed", 403 hides the row's controls.
-- [ ] **Better transcript rendering** — replace `LocalizedStringKey` markdown with a proper
-      renderer (AttributedString(markdown:) with `.full` syntax, or a small dependency such as
-      `swift-markdown-ui` if a dependency is acceptable — ask). Code blocks need monospaced,
-      horizontally scrollable rendering. Messages can be long; consider collapsing > N lines.
+- [x] **Better transcript rendering** — `MarkdownMessageBody` renders headings, lists, quotes,
+      tables, links, inline code and fenced code (monospaced, horizontally scrollable, copy button)
+      from `AttributedString(markdown:)` `.full` syntax, no dependency. Messages over ~14 lines or
+      1 200 characters start collapsed behind "Show more" (`MarkdownDocument.isLong`).
 - [ ] **Wake a sleeping session** — sending a message to a suspended session resumes it (that's what
       the composer placeholder promises). Verify the API actually does this for `suspended`
       sessions; if not, hide the composer for non-resumable ones.
@@ -192,6 +192,7 @@ don't crash. `DevinError.forbidden` already exists.
 ## 6. Open questions for the owner (tracked in #14)
 
 1. Is a small markdown dependency acceptable for transcript rendering, or stay dependency-free?
+   (B1 shipped dependency-free on Foundation's CommonMark parser; revisit only if it falls short.)
 2. Push notifications: OK to run a relay server, or stick with background refresh?
 3. Which org-management screens (4.4) matter on mobile? Suggested: none until 4.1–4.3 + 4.5 ship.
 4. App identity: bundle ID is `ai.devin.mobile` and accent colour is a placeholder; final name/icon?

@@ -15,6 +15,8 @@ public struct NewSessionRequest: Encodable, Hashable, Sendable {
     public var platform: String?
     /// Draft-7 JSON Schema object; validate with `StructuredOutputSchema.parse` before setting.
     public var structuredOutputSchema: JSONValue?
+    public var knowledgeIDs: [String]?
+    public var secretIDs: [String]?
 
     enum CodingKeys: String, CodingKey {
         case prompt, repos, tags, title, resumable, platform
@@ -24,6 +26,8 @@ public struct NewSessionRequest: Encodable, Hashable, Sendable {
         case attachmentURLs = "attachment_urls"
         case bypassApproval = "bypass_approval"
         case structuredOutputSchema = "structured_output_schema"
+        case knowledgeIDs = "knowledge_ids"
+        case secretIDs = "secret_ids"
     }
 
     public init(
@@ -38,7 +42,9 @@ public struct NewSessionRequest: Encodable, Hashable, Sendable {
         resumable: Bool? = nil,
         bypassApproval: Bool? = nil,
         platform: String? = nil,
-        structuredOutputSchema: JSONValue? = nil
+        structuredOutputSchema: JSONValue? = nil,
+        knowledgeIDs: [String]? = nil,
+        secretIDs: [String]? = nil
     ) {
         self.prompt = prompt
         self.repos = repos
@@ -52,6 +58,8 @@ public struct NewSessionRequest: Encodable, Hashable, Sendable {
         self.bypassApproval = bypassApproval
         self.platform = platform
         self.structuredOutputSchema = structuredOutputSchema
+        self.knowledgeIDs = knowledgeIDs
+        self.secretIDs = secretIDs
     }
 }
 

@@ -799,6 +799,192 @@ final class DevinClientTests: XCTestCase {
         XCTAssertEqual(seen, [.pending], "snapshots before the failure are still delivered")
     }
 
+    // MARK: knowledge & secrets
+
+    func testKnowledgeNotesBuildsQueryAndDecodes() async throws {
+        transport.stub(json: Fixtures.knowledgeNotesPage1)
+        let page = try await client.knowledgeNotes(org: "org-xyz", search: "ci", folderPath: "Engineering", pinnedRepo: "github.com/acme/api", first: 50)
+
+        XCTAssertEqual(transport.lastRequest.httpMethod, "GET")
+        XCTAssertNil(transport.lastRequest.httpBody)
+        XCTAssertEqual(transport.lastRequest.value(forHTTPHeaderField: "Authorization"), "Bearer cog_test")
+        let url = transport.lastRequest.url!
+        XCTAssertEqual(url.path, "/v3/organizations/org-xyz/knowledge/notes")
+        let items = URLComponents(url: url, resolvingAgainstBaseURL: false)!.queryItems!
+        XCTAssertEqual(items, [
+            URLQueryItem(name: "first", value: "50"),
+            URLQueryItem(name: "search", value: "ci"),
+            URLQueryItem(name: "folder_path", value: "Engineering"),
+            URLQueryItem(name: "pinned_repo", value: "github.com/acme/api"),
+        ])
+
+        XCTAssertEqual(page.items.map(\.noteID), ["note-ci001", "note-root002", "note-odd003"])
+        XCTAssertTrue(page.hasNextPage)
+        XCTAssertEqual(page.endCursor, "notes-cursor-2")
+        XCTAssertEqual(page.total, 4)
+
+        let ci = page.items[0]
+        XCTAssertEqual(ci.name, "CI conventions")
+        XCTAssertEqual(ci.folderID, "folder-eng")
+        XCTAssertEqual(ci.folderPath, "Engineering/CI")
+        XCTAssertEqual(ci.folderDisplayName, "Engineering/CI")
+        XCTAssertEqual(ci.trigger, "When touching CI or GitHub Actions")
+        XCTAssertTrue(ci.isEnabled)
+        XCTAssertEqual(ci.accessType, .org)
+        XCTAssertEqual(ci.pinnedRepo, "github.com/acme/api")
+        XCTAssertEqual(ci.createdAt, Date(timeIntervalSince1970: 1_756_800_000))
+
+        let root = page.items[1]
+        XCTAssertNil(root.folderID)
+        XCTAssertEqual(root.folderPath, "")
+        XCTAssertEqual(root.folderDisplayName, KnowledgeNote.rootFolderName)
+        XCTAssertFalse(root.isEnabled)
+        XCTAssertEqual(root.accessType, .enterprise)
+
+        let odd = page.items[2]
+        XCTAssertNil(odd.accessType, "unknown access_type must decode as nil")
+        XCTAssertEqual(odd.displayName, "Déploiement")
+        XCTAssertTrue(odd.matches("deploie"), "search is diacritic-insensitive")
+        XCTAssertTrue(ci.matches("github actions"), "search covers the trigger")
+        XCTAssertFalse(root.matches("github"))
+        XCTAssertTrue(root.matches("   "), "blank search matches everything")
+    }
+
+    func testKnowledgeNotesOmitsUnsetFilters() async throws {
+        transport.stub(json: Fixtures.knowledgeNotesPage2)
+        _ = try await client.knowledgeNotes(org: "org-xyz", search: "")
+        XCTAssertEqual(transport.lastRequest.url?.query, "first=100", "empty search is omitted")
+    }
+
+    func testAllKnowledgeNotesFollowsCursor() async throws {
+        transport.stub(json: Fixtures.knowledgeNotesPage1)
+        transport.stub(json: Fixtures.knowledgeNotesPage2)
+
+        let notes = try await client.allKnowledgeNotes(org: "org-xyz")
+
+        XCTAssertEqual(notes.map(\.noteID), ["note-ci001", "note-root002", "note-odd003", "note-web004"])
+        XCTAssertEqual(transport.requests.count, 2)
+        let first = URLComponents(url: transport.requests[0].url!, resolvingAgainstBaseURL: false)!.queryItems!
+        XCTAssertEqual(first, [URLQueryItem(name: "first", value: "200")])
+        let second = URLComponents(url: transport.requests[1].url!, resolvingAgainstBaseURL: false)!.queryItems!
+        XCTAssertEqual(second, [URLQueryItem(name: "first", value: "200"), URLQueryItem(name: "after", value: "notes-cursor-2")])
+    }
+
+    func testKnowledgeFoldersDecodesTree() async throws {
+        transport.stub(json: Fixtures.knowledgeFolders)
+        let tree = try await client.knowledgeFolders(org: "org-xyz")
+
+        XCTAssertEqual(transport.lastRequest.httpMethod, "GET")
+        XCTAssertEqual(transport.lastRequest.url?.path, "/v3/organizations/org-xyz/knowledge/folders")
+        XCTAssertNil(transport.lastRequest.url?.query)
+
+        XCTAssertEqual(tree.rootNoteCount, 1)
+        XCTAssertEqual(tree.totalNoteCount, 4)
+        XCTAssertEqual(tree.folders.map(\.folderID), ["folder-eng", "folder-ci", "folder-web"])
+        XCTAssertEqual(tree.folders[1].parentFolderID, "folder-eng")
+        XCTAssertEqual(tree.folders[1].path, "Engineering/CI")
+        XCTAssertNil(tree.folders[2].parentFolderID, "missing parent_folder_id decodes as root")
+    }
+
+    func testSecretsListDecodesMetadataOnly() async throws {
+        transport.stub(json: Fixtures.secretsPage)
+        let page = try await client.secrets(org: "org-xyz", after: "cursor-s", first: 20)
+
+        XCTAssertEqual(transport.lastRequest.httpMethod, "GET")
+        XCTAssertEqual(transport.lastRequest.value(forHTTPHeaderField: "Authorization"), "Bearer cog_test")
+        let url = transport.lastRequest.url!
+        XCTAssertEqual(url.path, "/v3/organizations/org-xyz/secrets")
+        let items = URLComponents(url: url, resolvingAgainstBaseURL: false)!.queryItems!
+        XCTAssertEqual(items, [URLQueryItem(name: "first", value: "20"), URLQueryItem(name: "after", value: "cursor-s")])
+
+        XCTAssertEqual(page.items.map(\.secretID), ["secret-npm001", "secret-gh002", "secret-odd003"])
+        XCTAssertFalse(page.hasNextPage)
+
+        let npm = page.items[0]
+        XCTAssertEqual(npm.key, "NPM_TOKEN")
+        XCTAssertEqual(npm.displayName, "NPM_TOKEN")
+        XCTAssertEqual(npm.detailSummary, "Publish token for @acme · Key / value")
+        XCTAssertEqual(npm.secretType, .keyValue)
+        XCTAssertEqual(npm.accessType, .org)
+        XCTAssertTrue(npm.isSensitive)
+        XCTAssertEqual(npm.updatedAt, Date(timeIntervalSince1970: 1_756_803_600))
+        XCTAssertEqual(npm.updatedBy, "user-2")
+
+        let cookie = page.items[1]
+        XCTAssertNil(cookie.key)
+        XCTAssertEqual(cookie.displayName, "GitHub session cookie", "falls back to the note when there is no key")
+        XCTAssertEqual(cookie.detailSummary, "Cookie")
+        XCTAssertEqual(cookie.accessType, .personal)
+        XCTAssertNil(cookie.updatedAt)
+
+        let odd = page.items[2]
+        XCTAssertNil(odd.secretType, "unknown secret_type must decode as nil")
+        XCTAssertEqual(odd.rawSecretType, "hardware-token")
+        XCTAssertEqual(odd.typeSummary, "Hardware Token")
+        XCTAssertNil(odd.accessType, "unknown access_type must decode as nil")
+        XCTAssertEqual(odd.detailSummary, "Hardware Token")
+        XCTAssertTrue(odd.matches("vault"))
+        XCTAssertTrue(cookie.matches("github"))
+        XCTAssertFalse(cookie.matches("npm"))
+
+        let mirror = Mirror(reflecting: npm)
+        XCTAssertFalse(mirror.children.contains { $0.label?.lowercased().contains("value") == true },
+                       "OrgSecret must never carry a secret value")
+    }
+
+    func testAllSecretsFollowsCursor() async throws {
+        transport.stub(json: Fixtures.secretsPage1)
+        transport.stub(json: Fixtures.secretsPage)
+
+        let secrets = try await client.allSecrets(org: "org-xyz")
+
+        XCTAssertEqual(secrets.map(\.secretID), ["secret-aws000", "secret-npm001", "secret-gh002", "secret-odd003"])
+        XCTAssertEqual(transport.requests.count, 2)
+        let first = URLComponents(url: transport.requests[0].url!, resolvingAgainstBaseURL: false)!.queryItems!
+        XCTAssertEqual(first, [URLQueryItem(name: "first", value: "200")])
+        let second = URLComponents(url: transport.requests[1].url!, resolvingAgainstBaseURL: false)!.queryItems!
+        XCTAssertEqual(second, [URLQueryItem(name: "first", value: "200"), URLQueryItem(name: "after", value: "secrets-cursor-2")])
+    }
+
+    func testKnowledgeAndSecretsForbiddenIsTyped() async {
+        transport.stub(403, json: Fixtures.problem403Knowledge)
+        do {
+            _ = try await client.knowledgeNotes(org: "org-xyz")
+            XCTFail("expected forbidden")
+        } catch let error as DevinError {
+            guard case .forbidden(let problem) = error else { return XCTFail("expected forbidden, got \(error)") }
+            XCTAssertEqual(problem?.detail, "Missing permission: ViewOrgKnowledge")
+        } catch {
+            XCTFail("wrong error type: \(error)")
+        }
+
+        transport.stub(403, json: Fixtures.problem403)
+        do {
+            _ = try await client.secrets(org: "org-xyz")
+            XCTFail("expected forbidden")
+        } catch let error as DevinError {
+            XCTAssertTrue(error.isAuthFailure)
+            guard case .forbidden = error else { return XCTFail("expected forbidden, got \(error)") }
+        } catch {
+            XCTFail("wrong error type: \(error)")
+        }
+    }
+
+    func testCreateSessionEncodesKnowledgeAndSecretIDs() async throws {
+        transport.stub(json: Fixtures.sessionRunningWaiting)
+        let request = NewSessionRequest(prompt: "Ship it", knowledgeIDs: ["note-ci001", "note-web004"], secretIDs: ["secret-npm001"])
+        _ = try await client.createSession(org: "org-xyz", request)
+
+        let body = transport.lastRequest.bodyJSON
+        XCTAssertEqual(body["knowledge_ids"] as? [String], ["note-ci001", "note-web004"])
+        XCTAssertEqual(body["secret_ids"] as? [String], ["secret-npm001"])
+
+        transport.stub(json: Fixtures.sessionRunningWaiting)
+        _ = try await client.createSession(org: "org-xyz", NewSessionRequest(prompt: "Ship it"))
+        XCTAssertNil(transport.lastRequest.bodyJSON["knowledge_ids"], "nil optionals must be omitted")
+        XCTAssertNil(transport.lastRequest.bodyJSON["secret_ids"])
+    }
+
     func testMeDecodesOrg() async throws {
         transport.stub(json: Fixtures.selfPAT)
         let me = try await client.me()

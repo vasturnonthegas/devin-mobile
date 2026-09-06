@@ -48,6 +48,7 @@ jobs:
       ARCHIVE_PATH: build/DevinMobile.xcarchive
       EXPORT_PATH: build/export
       KEYCHAIN_NAME: devin-mobile-ci.keychain-db
+      HAS_DISTRIBUTION_CERTIFICATE: ${{ secrets.DISTRIBUTION_CERTIFICATE_P12_BASE64 != '' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -125,7 +126,7 @@ jobs:
           echo "ASC_KEY_PATH=$key_path" >> "$GITHUB_ENV"
 
       - name: Import distribution certificate (optional)
-        if: ${{ secrets.DISTRIBUTION_CERTIFICATE_P12_BASE64 != '' }}
+        if: ${{ env.HAS_DISTRIBUTION_CERTIFICATE == 'true' }}
         env:
           P12_BASE64: ${{ secrets.DISTRIBUTION_CERTIFICATE_P12_BASE64 }}
           P12_PASSWORD: ${{ secrets.DISTRIBUTION_CERTIFICATE_PASSWORD }}

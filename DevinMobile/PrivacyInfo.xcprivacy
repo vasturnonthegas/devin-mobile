@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	App privacy manifest. Covers the app target and the first-party DevinKit package it links;
+	DevinWidget/PrivacyInfo.xcprivacy is the extension's copy (every target ships its own).
+	Keep AppStore/PrivacyQuestionnaire.md in sync — it is the human-readable form of this file.
+	-->
+	<key>NSPrivacyTracking</key>
+	<false/>
+	<key>NSPrivacyTrackingDomains</key>
+	<array/>
+	<!--
+	Nothing is collected by the developer. The PAT, prompts and attachments are sent only to
+	api.devin.ai to service the user's own requests and stored only in the device Keychain.
+	-->
+	<key>NSPrivacyCollectedDataTypes</key>
+	<array/>
+	<key>NSPrivacyAccessedAPITypes</key>
+	<array>
+		<dict>
+			<!--
+			CA92.1: app-private defaults (RecentRepos, InboxScope, -OpenURL launch argument).
+			1C8F.1: App Group suite `group.ai.devin.mobile` (AppGroup.defaults → SessionSnapshot).
+			-->
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategoryUserDefaults</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array>
+				<string>CA92.1</string>
+				<string>1C8F.1</string>
+			</array>
+		</dict>
+	</array>
+</dict>
+</plist>

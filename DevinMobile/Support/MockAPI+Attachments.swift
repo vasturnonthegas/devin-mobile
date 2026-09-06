@@ -36,7 +36,7 @@ extension MockAPI {
     }
 
     static func attachmentBody(uuid: String, name: String) -> Data? {
-        files.first { $0.uuid == uuid && $0.name == name }?.bytes()
+        files.first { $0.uuid == uuid && $0.name == name }?.bytes() ?? uploadedBody(uuid: uuid, name: name)
     }
 
     /// Messages that quote attachment URLs, so `SessionAttachmentsModel.placement(in:)` pins the

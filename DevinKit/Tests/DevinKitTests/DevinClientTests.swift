@@ -284,6 +284,27 @@ final class DevinClientTests: XCTestCase {
         XCTAssertEqual(body["devin_mode"] as? String, "ultra")
         XCTAssertEqual(body["max_acu_limit"] as? Int, 10)
         XCTAssertNil(body["title"], "nil optionals must be omitted, not sent as null")
+        XCTAssertNil(body["attachment_urls"], "no attachments → key omitted, not null")
+        XCTAssertEqual(session.sessionID, "devin-abc123")
+    }
+
+    func testCreateSessionWithAttachmentURLs() async throws {
+        transport.stub(json: Fixtures.sessionRunningWaiting)
+        let urls = [
+            URL(string: "https://api.devin.ai/v3/organizations/org-xyz/attachments/7f3a9c1e/bug.png")!,
+            URL(string: "https://api.devin.ai/v3/organizations/org-xyz/attachments/0b2d4e6f/crash.log")!,
+        ]
+
+        let request = NewSessionRequest(prompt: "Fix the crash in the screenshot", attachmentURLs: urls)
+        let session = try await client.createSession(org: "org-xyz", request)
+
+        XCTAssertEqual(transport.lastRequest.httpMethod, "POST")
+        XCTAssertEqual(transport.lastRequest.url?.path, "/v3/organizations/org-xyz/sessions")
+        XCTAssertEqual(transport.lastRequest.value(forHTTPHeaderField: "Content-Type"), "application/json")
+        let body = transport.lastRequest.bodyJSON
+        XCTAssertEqual(body["prompt"] as? String, "Fix the crash in the screenshot")
+        XCTAssertEqual(body["attachment_urls"] as? [String], urls.map(\.absoluteString))
+        XCTAssertEqual(body.count, 2, "only prompt + attachment_urls; every other optional omitted")
         XCTAssertEqual(session.sessionID, "devin-abc123")
     }
 

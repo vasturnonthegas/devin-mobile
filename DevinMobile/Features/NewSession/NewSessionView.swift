@@ -20,6 +20,7 @@ struct NewSessionView: View {
     @State private var advanced = NewSessionAdvancedOptions()
     @State private var knowledgeIDs: Set<String> = []
     @State private var secretIDs: Set<String> = []
+    @State private var attachments: ComposerAttachments
     @State private var isCreating = false
     @State private var errorMessage: String?
     @FocusState private var promptFocused: Bool
@@ -29,10 +30,14 @@ struct NewSessionView: View {
         self.store = store
         self.onCreated = onCreated
         _prompt = State(initialValue: initialPrompt)
+        _attachments = State(initialValue: ComposerAttachments(client: store.client, orgID: store.orgID))
     }
 
+    /// Attachments upload as they are picked; the session is created with their URLs, so every
+    /// pending item must be `.uploaded` (or removed) before Start is enabled.
     private var canCreate: Bool {
         !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !isCreating && advanced.isValid
+            && (attachments.items.isEmpty || attachments.isReadyToSend)
     }
 
     var body: some View {
@@ -67,6 +72,8 @@ struct NewSessionView: View {
                 } footer: {
                     Text("Optional. Devin can also pick repos from your prompt.")
                 }
+
+                NewSessionAttachmentsSection(attachments: attachments)
 
                 Section("Options") {
                     Picker("Mode", selection: $mode) {
@@ -113,7 +120,10 @@ struct NewSessionView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel") {
+                        attachments.clear()
+                        dismiss()
+                    }
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     if isCreating {
@@ -128,7 +138,7 @@ struct NewSessionView: View {
                 PlaybookPreviewSheet(store: store, playbookID: target.id)
             }
             .onAppear { promptFocused = true }
-            .interactiveDismissDisabled(!prompt.isEmpty)
+            .interactiveDismissDisabled(!prompt.isEmpty || !attachments.items.isEmpty)
             .sheet(isPresented: $showRepoPicker) {
                 RepoPickerView(store: store, selection: $selectedRepos)
             }
@@ -157,6 +167,7 @@ struct NewSessionView: View {
             devinMode: mode == .normal ? nil : mode,
             maxACULimit: limitACUs ? acuLimit : nil,
             tags: tags.isEmpty ? nil : tags,
+            attachmentURLs: attachments.uploadedURLs.isEmpty ? nil : attachments.uploadedURLs,
             knowledgeIDs: knowledgeIDs.isEmpty ? nil : knowledgeIDs.sorted(),
             secretIDs: secretIDs.isEmpty ? nil : secretIDs.sorted()
         )

@@ -100,8 +100,8 @@ public struct DevinClient: Sendable {
     }
 
     public func attachments(org: String, id: String) async throws -> [SessionAttachment] {
-        let page: Page<SessionAttachment> = try await request(.get, "/v3/organizations/\(org)/sessions/\(id)/attachments")
-        return page.items
+        let list: SessionAttachmentList = try await request(.get, "/v3/organizations/\(org)/sessions/\(id)/attachments")
+        return list.items
     }
 
     // MARK: Playbooks
@@ -166,7 +166,7 @@ public struct DevinClient: Sendable {
         _ = try await perform(makeRequest(method, path, bodyData: try encoder.encode(body)))
     }
 
-    private func perform(_ request: URLRequest) async throws -> Data {
+    func perform(_ request: URLRequest) async throws -> Data {
         let (data, response): (Data, HTTPURLResponse)
         do {
             (data, response) = try await transport.send(request)

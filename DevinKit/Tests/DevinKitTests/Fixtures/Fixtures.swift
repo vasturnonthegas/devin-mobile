@@ -239,6 +239,23 @@ enum Fixtures {
     }
     """
 
+    static let attachmentsArray = """
+    [
+      {"attachment_id": "att-1", "name": "screenshot.png", "source": "user",
+       "url": "https://api.devin.ai/v3/organizations/org-xyz/attachments/0f3c-uuid/screenshot.png", "content_type": "image/png"},
+      {"attachment_id": "att-2", "name": "crash.log", "source": "devin",
+       "url": "https://api.devin.ai/v3/organizations/org-xyz/attachments/8a1b-uuid/crash.log", "content_type": null},
+      {"attachment_id": "att-3", "name": "photo.HEIC", "source": "user",
+       "url": "/v3/organizations/org-xyz/attachments/77e2-uuid/photo.HEIC", "content_type": "application/octet-stream"},
+      {"attachment_id": "att-4", "name": "design", "source": "user",
+       "url": "https://cdn.example.com/design.bin", "content_type": "application/x-future-type; charset=binary"}
+    ]
+    """
+
+    static let attachmentsPage = """
+    {"items": \(attachmentsArray), "end_cursor": null, "has_next_page": false}
+    """
+
     static let sessionTags = """
     {"tags": ["bug", "auth", "Mobile Sprint 1"], "future_field": "ignored"}
     """

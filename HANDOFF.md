@@ -229,7 +229,9 @@ truth; the summary below was taken from it).
       ≤ 64 KB, no external `$ref` — and its error blocks Start with a message under the field.
 - [x] **`bypass_approval`, `resumable`, `platform`** toggles in an "Advanced" disclosure
       (`NewSessionAdvancedOptions`). Fields are encoded only when they differ from the API default.
-- [ ] **Attachments** on create (see 4.2).
+- [x] **Attachments** on create — `NewSessionAttachmentsSection` reuses `ComposerAttachments`
+      (same picker/upload/preview as the composer); uploaded URLs go out as `attachment_urls` on
+      `POST …/sessions`. Start stays disabled until every upload finishes.
 - [ ] **Session links** (`session_links`) — link to a parent/related session.
 - [ ] **Prompt templates** — playbook body preview (`GET …/playbooks/{id}`) before starting.
 

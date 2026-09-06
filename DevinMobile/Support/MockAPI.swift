@@ -302,9 +302,7 @@ final class MockAPIProtocol: URLProtocol, @unchecked Sendable {
             return MockAPI.attachmentBody(uuid: parts[4], name: parts[5]).map { (200, $0) } ?? notFound()
         }
         if method == "POST", parts.count == 4, parts[0] == "v3", parts[3] == "attachments" {
-            let uuid = UUID().uuidString.lowercased()
-            return encode(UploadedAttachment(attachmentID: "att-\(uuid.prefix(8))", name: "upload.png",
-                                             url: URL(string: "https://api.devin.ai/v3/organizations/org-mock/attachments/\(uuid)/upload.png")!))
+            return encode(MockAPI.storeUpload(body: body(of: request), contentType: request.value(forHTTPHeaderField: "Content-Type")))
         }
         if method == "GET", parts.count >= 4, parts[0] == "v3", parts[1] == "organizations", parts[3] == "playbooks" {
             if parts.count == 4 { return (200, MockAPI.playbooksJSON()) }
@@ -333,9 +331,7 @@ final class MockAPIProtocol: URLProtocol, @unchecked Sendable {
             return encode(page)
 
         case ("POST", nil, nil):
-            struct Body: Decodable { let prompt: String }
-            let prompt = body(of: request).flatMap { try? JSONDecoder().decode(Body.self, from: $0) }?.prompt ?? "New session"
-            return encode(MockAPI.create(prompt: prompt))
+            return encode(MockAPI.createSession(body: body(of: request)))
 
         case ("GET", let id?, nil), ("DELETE", let id?, nil), ("POST", let id?, "archive"):
             guard let session = MockAPI.session(id: id) else { return notFound() }
@@ -352,7 +348,7 @@ final class MockAPIProtocol: URLProtocol, @unchecked Sendable {
             return encode(MockAPI.startGeneration(for: id))
 
         case ("GET", let id?, "messages"):
-            return encode(Page(items: MockAPI.messages(for: id)))
+            return encode(Page(items: MockAPI.createdMessages(for: id) ?? MockAPI.messages(for: id)))
 
         case ("POST", let id?, "messages"):
             guard let session = MockAPI.session(id: id) else { return notFound() }
@@ -363,7 +359,7 @@ final class MockAPIProtocol: URLProtocol, @unchecked Sendable {
             return encode(MockAPI.current(session))
 
         case ("GET", let id?, "attachments"):
-            return (200, MockAPI.attachmentsJSON(for: id))
+            return (200, MockAPI.createdAttachmentsJSON(for: id) ?? MockAPI.attachmentsJSON(for: id))
 
         default:
             return notFound()

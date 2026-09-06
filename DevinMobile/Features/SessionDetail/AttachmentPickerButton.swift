@@ -6,6 +6,8 @@ import DevinKit
 /// "+" button in the composer. Every source ends in `ComposerAttachments.add`, which starts the upload.
 struct AttachmentPickerButton: View {
     let attachments: ComposerAttachments
+    /// Text label for Form rows (New Session); nil keeps the compact "+" icon used in the composer.
+    var title: String? = nil
 
     @State private var showPhotos = false
     @State private var showFiles = false
@@ -20,9 +22,13 @@ struct AttachmentPickerButton: View {
             }
             Button("Choose File", systemImage: "folder") { showFiles = true }
         } label: {
-            Image(systemName: "plus.circle.fill")
-                .font(.system(size: 28))
-                .frame(width: 32, height: 32)
+            if let title {
+                Label(title, systemImage: "paperclip")
+            } else {
+                Image(systemName: "plus.circle.fill")
+                    .font(.system(size: 28))
+                    .frame(width: 32, height: 32)
+            }
         }
         .accessibilityLabel("Add attachment")
         .disabled(!attachments.canAddMore)

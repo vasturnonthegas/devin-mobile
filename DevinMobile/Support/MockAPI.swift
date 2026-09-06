@@ -90,7 +90,7 @@ final class MockReviews: @unchecked Sendable {
             status: status,
             repoPath: "\(url.host ?? "github.com")/\(parts.prefix(2).joined(separator: "/"))",
             prNumber: parts.last.flatMap(Int.init) ?? 0,
-            commitSHA: String(format: "%040lx", UInt(bitPattern: url.absoluteString.hashValue)),
+            commitSHA: String(String(repeating: String(format: "%016lx", UInt(bitPattern: url.absoluteString.hashValue)), count: 3).prefix(40)),
             createdAt: accepted
         )
     }

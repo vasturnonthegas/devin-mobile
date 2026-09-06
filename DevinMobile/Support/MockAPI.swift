@@ -281,6 +281,10 @@ final class MockAPIProtocol: URLProtocol, @unchecked Sendable {
         if method == "GET", parts.count == 5, parts[0] == "v3beta1", parts[3] == "members", parts[4] == "users" {
             return encode(Page(items: MockAPI.members))
         }
+        if method == "GET", parts.count == 4, parts[0] == "v3beta1", parts[3] == "repositories" {
+            let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            return encode(MockAPI.repositoriesPage(queryItems: items))
+        }
         if parts.count == 4, parts[0] == "v3", parts[1] == "organizations", parts[3] == "pr-reviews" {
             let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
             let prURL: URL?

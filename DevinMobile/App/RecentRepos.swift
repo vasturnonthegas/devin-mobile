@@ -1,6 +1,9 @@
 import Foundation
 
-/// The API doesn't expose which repos a session used, so remember what the user typed.
+/// Cache of the repos most recently used to start a session (host-prefixed `github.com/owner/repo`).
+/// Not a source of truth: `RepoPickerModel` lists repositories from the API and only pins these on
+/// top; `SessionFilterSheet` offers them as suggestions. The API doesn't expose per-session repos,
+/// so this is the only place recency lives. Safe to clear at any time.
 enum RecentRepos {
     private static let key = "recentRepos"
     private static let limit = 12

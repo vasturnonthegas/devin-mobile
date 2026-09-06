@@ -30,19 +30,19 @@ Sign in with a PAT (`cog_…`, Devin → Settings → Devin API). Enterprise PAT
 ```
 DevinKit (no UI, platform-agnostic, unit-tested with MockTransport)
   Client/   DevinClient (async/await, Bearer, RFC 9457 → DevinError), HTTPTransport (injectable)
-  Models/   Session, SessionMessage, Playbook, Principal, Page<T>, NewSessionRequest/SessionQuery, JSONValue
+  Models/   Session, SessionMessage, Playbook, Principal, Repository, Page<T>, NewSessionRequest/SessionQuery/RepositoryQuery, JSONValue
   Storage/  CredentialStore protocol; KeychainCredentialStore (iOS), InMemoryCredentialStore (tests/previews)
   Sharing/  AppGroup (ids shared with extensions), DeepLink (devinmobile:// URLs), SessionSnapshot (last-known buckets,
             + `changes(since:)` bucket diff),
             WidgetContent (signed-out / awaiting-first-load / sessions, from Keychain + snapshot)
 
 DevinMobile (SwiftUI, iOS 17, @Observable + @MainActor, no third-party deps)
-  App/          AppModel (auth state machine), SessionStore (list + polling), RecentRepos,
+  App/          AppModel (auth state machine), SessionStore (list + polling), RecentRepos (cache),
                 DeepLinkRouter + DeepLinkNavigation (URL scheme → inbox navigation),
                 BackgroundRefresh (BGAppRefreshTask) + SessionNotifier (local notifications) +
                 NotificationDelegate (UNUserNotificationCenter delegate, owns the DeepLinkRouter),
                 WidgetTimeline (publishes SessionSnapshot + reloads WidgetKit)
-  Features/     Onboarding, Inbox, SessionDetail (+ SessionDetailModel), NewSession, Settings
+  Features/     Onboarding, Inbox, SessionDetail (+ SessionDetailModel), NewSession (+ RepoPicker), Settings
   Support/      StatusBadge, PullRequestLink (+ PullRequestStateBadge, ExternalLink),
                 Markdown/ (MarkdownDocument block tree + MarkdownView)
 
@@ -72,9 +72,17 @@ Rules of thumb that the existing code follows:
   replaced by an explanation. `Session.messaging` (`Session+Messaging.swift`) is the single source
   of truth; `SessionResponse` has no `resumable` flag, so a disposable session that is still
   `suspended` looks wakeable until the API rejects the message (409) — that error is shown as-is.
+- **Repositories come from the API; recents are a cache.** `RepoPickerModel` searches
+  `GET /v3beta1/…/repositories` server-side (`filter_name`, 300 ms debounce, latest request wins)
+  and pages by cursor; `RecentRepos` (UserDefaults) only pins rows on top and seeds filter
+  suggestions — it is never the list's source. `Repository.fullPath` (host-prefixed
+  `github.com/owner/repo`) is what goes into `NewSessionRequest.repos`; `repo_path` alone may omit
+  the host. A 403/404 from the repositories endpoint is sticky per picker: the list is hidden and
+  the user types a path instead.
 - **Simulator without a PAT.** Launch with `-MockAPI` (DEBUG only) to run against an in-process
-  fake API (`DevinMobile/Support/MockAPI.swift`, 130 sessions) backed by `InMemoryCredentialStore`.
-  `POST …/messages` to a suspended mock session flips it to `resuming`; to an exited one returns 409.
+  fake API (`DevinMobile/Support/MockAPI.swift`, 130 sessions, 120 repositories) backed by
+  `InMemoryCredentialStore`. `POST …/messages` to a suspended mock session flips it to `resuming`;
+  to an exited one returns 409.
   `POST …/sessions` appends to an in-memory `created` list (served by list + detail for the rest of
   the launch); `…/insights` has analysis for every third session and "arrives" 5 s after `generate`.
 - **Insights are generated, not fetched.** `GET …/sessions/{id}/insights` returns `analysis: null`
@@ -203,10 +211,11 @@ truth; the summary below was taken from it).
 
 ### 4.3 New session parity
 
-- [ ] **Repo picker from the API** — `GET /v3beta1/organizations/{org}/repositories`
-      (`first`, `after`, `filter_name`; returns `repo_name`, `repo_path`, `repo_language`,
-      `repo_description`). Replace the `RecentRepos` UserDefaults hack with a searchable picker;
-      keep recents as a "pinned" section.
+- [x] **Repo picker from the API** — `RepoPickerView`/`RepoPickerModel` over
+      `DevinClient.repositories(org:query:)` (`RepositoryQuery`: `first`, `after`, `filter_name`,
+      `load_indexing_status=false`). Multi-select, debounced server search, cursor pagination,
+      recents pinned on top, typed `owner/repo` fallback. Not yet exercised against the live API
+      (no PAT) — verify the `repo_path` shape and that `repos` accepts `Repository.fullPath`.
 - [ ] **Knowledge & secrets attach** — `knowledge_ids` (`GET …/knowledge/notes`,
       `…/knowledge/folders`) and `secret_ids` (`GET …/secrets`) on `SessionCreateRequest`.
 - [x] **Structured output schema** — `structured_output_schema` text field (advanced section).

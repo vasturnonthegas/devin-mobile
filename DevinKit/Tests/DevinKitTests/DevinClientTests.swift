@@ -882,6 +882,82 @@ final class DevinClientTests: XCTestCase {
         XCTAssertTrue(second.queryItems!.contains(URLQueryItem(name: "after", value: "m1")))
     }
 
+    func testRepositoriesBuildsQueryAndDecodes() async throws {
+        transport.stub(json: Fixtures.repositoriesPage1)
+
+        let page = try await client.repositories(org: "org-xyz", query: RepositoryQuery(first: 25, after: "r0", filterName: "  api "))
+
+        let url = transport.lastRequest.url!
+        XCTAssertEqual(transport.lastRequest.httpMethod, "GET")
+        XCTAssertEqual(url.path, "/v3beta1/organizations/org-xyz/repositories")
+        let items = URLComponents(url: url, resolvingAgainstBaseURL: false)!.queryItems!
+        XCTAssertTrue(items.contains(URLQueryItem(name: "first", value: "25")))
+        XCTAssertTrue(items.contains(URLQueryItem(name: "after", value: "r0")))
+        XCTAssertTrue(items.contains(URLQueryItem(name: "filter_name", value: "api")), "search text is trimmed")
+        XCTAssertTrue(items.contains(URLQueryItem(name: "load_indexing_status", value: "false")))
+        XCTAssertEqual(transport.lastRequest.value(forHTTPHeaderField: "Authorization"), "Bearer cog_test")
+
+        XCTAssertEqual(page.items.map(\.repoPath), ["acme/api", "gitlab.example.com/acme/web"])
+        XCTAssertTrue(page.hasNextPage)
+        XCTAssertEqual(page.endCursor, "r1")
+        XCTAssertEqual(page.total, 3)
+
+        let api = page.items[0]
+        XCTAssertEqual(api.repoName, "api")
+        XCTAssertEqual(api.repoLanguage, "Go")
+        XCTAssertEqual(api.repoDescription, "Public REST API")
+        XCTAssertEqual(api.lastUpdatedAt, Date(timeIntervalSince1970: 1_756_800_000))
+        XCTAssertEqual(api.fullPath, "github.com/acme/api", "bare repo_path is prefixed with the connection host")
+        XCTAssertEqual(api.shortPath, "acme/api")
+        XCTAssertEqual(api.indexingStatus?.indexingEnabled, true)
+        XCTAssertEqual(api.indexingStatus?.latestIndexes.map(\.status), [.completed, nil], "unknown job status decodes as nil")
+        XCTAssertEqual(api.indexingStatus?.latestIndexes[1].rawStatus, "reticulating_splines")
+
+        let web = page.items[1]
+        XCTAssertNil(web.repoDescription)
+        XCTAssertNil(web.repoLanguage)
+        XCTAssertNil(web.lastUpdatedAt)
+        XCTAssertNil(web.indexingStatus)
+        XCTAssertEqual(web.fullPath, "gitlab.example.com/acme/web", "host-prefixed repo_path is left alone")
+        XCTAssertEqual(web.shortPath, "acme/web")
+    }
+
+    func testRepositoriesDefaultQueryAndCursorFollow() async throws {
+        transport.stub(json: Fixtures.repositoriesPage1)
+        transport.stub(json: Fixtures.repositoriesPage2)
+
+        let first = try await client.repositories(org: "org-xyz")
+        let items = URLComponents(url: transport.lastRequest.url!, resolvingAgainstBaseURL: false)!.queryItems!
+        XCTAssertEqual(items.map(\.name).sorted(), ["first", "load_indexing_status"], "no after/filter_name when unset")
+        XCTAssertTrue(items.contains(URLQueryItem(name: "first", value: "50")))
+
+        let second = try await client.repositories(org: "org-xyz", query: RepositoryQuery(after: first.endCursor, loadIndexingStatus: true))
+        let next = URLComponents(url: transport.lastRequest.url!, resolvingAgainstBaseURL: false)!.queryItems!
+        XCTAssertTrue(next.contains(URLQueryItem(name: "after", value: "r1")))
+        XCTAssertFalse(next.contains { $0.name == "load_indexing_status" }, "server default (true) is left implicit")
+        XCTAssertFalse(second.hasNextPage)
+        XCTAssertEqual(second.items.first?.fullPath, "github.com/acme/mobile", "scheme and trailing slash are stripped from the host")
+        XCTAssertNil(second.items.first?.indexingStatus, "missing key is tolerated")
+    }
+
+    func testRepositoryQueryClampsPageSize() {
+        XCTAssertTrue(RepositoryQuery(first: 500).queryItems.contains(URLQueryItem(name: "first", value: "100")))
+        XCTAssertTrue(RepositoryQuery(first: 0).queryItems.contains(URLQueryItem(name: "first", value: "1")))
+        XCTAssertFalse(RepositoryQuery(after: "", filterName: "   ").queryItems.contains { $0.name == "after" || $0.name == "filter_name" })
+    }
+
+    func testRepositoriesForbiddenIsTypedError() async {
+        transport.stub(403, json: Fixtures.problem403Repositories)
+        do {
+            _ = try await client.repositories(org: "org-xyz")
+            XCTFail("expected error")
+        } catch let error as DevinError {
+            guard case .forbidden = error else { return XCTFail("expected forbidden, got \(error)") }
+        } catch {
+            XCTFail("wrong error type: \(error)")
+        }
+    }
+
     func testUnauthorizedMapsToTypedError() async {
         transport.stub(401, json: Fixtures.problem401)
         do {

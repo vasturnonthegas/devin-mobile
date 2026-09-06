@@ -494,4 +494,45 @@ enum Fixtures {
       "structured_output_schema": {"type": "object", "properties": {"fixed": {"type": "boolean"}}}
     }
     """
+
+    static let repositoriesPage1 = """
+    {
+      "items": [
+        {"provider_repository_id": "123456", "git_connection_id": "gc-1", "git_connection_host": "github.com",
+         "repo_name": "api", "repo_path": "acme/api", "repo_description": "Public REST API",
+         "last_updated_at": 1756800000, "repo_language": "Go",
+         "indexing_status": {
+           "indexing_enabled": true,
+           "latest_indexes": [
+             {"job_id": "job-1", "status": "completed", "commit": "abc123", "branch_name": "main", "created_at": 1756790000},
+             {"job_id": "job-2", "status": "reticulating_splines", "commit": "def456", "branch_name": null, "created_at": 1756795000}
+           ],
+           "latest_completed_search_index_job": null,
+           "latest_completed_wiki_index_job": null
+         }},
+        {"provider_repository_id": "789", "git_connection_id": "gc-2", "git_connection_host": "gitlab.example.com",
+         "repo_name": "web", "repo_path": "gitlab.example.com/acme/web", "repo_description": null,
+         "last_updated_at": null, "repo_language": null, "indexing_status": null, "future_field": {"x": 1}}
+      ],
+      "end_cursor": "r1",
+      "has_next_page": true,
+      "total": 3
+    }
+    """
+
+    static let repositoriesPage2 = """
+    {
+      "items": [
+        {"provider_repository_id": "42", "git_connection_id": "gc-1", "git_connection_host": "https://github.com/",
+         "repo_name": "mobile", "repo_path": "acme/mobile", "repo_description": "iOS app",
+         "last_updated_at": 1756800500, "repo_language": "Swift"}
+      ],
+      "end_cursor": null,
+      "has_next_page": false
+    }
+    """
+
+    static let problem403Repositories = """
+    {"status": 403, "title": "Forbidden", "detail": "Missing permission: ViewOrgRepositories", "type": "about:blank"}
+    """
 }

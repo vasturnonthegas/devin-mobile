@@ -10,6 +10,7 @@ struct SessionDetailView: View {
 
     @State private var confirmTerminate = false
     @State private var suggestedPrompt: SuggestedPromptDraft?
+    @State private var showRelatedSession = false
     @FocusState private var composerFocused: Bool
 
     init(store: SessionStore, sessionID: String) {
@@ -34,6 +35,7 @@ struct SessionDetailView: View {
         }
         .onDisappear { model.stopPolling() }
         .suggestedPromptSessionFlow(store: model.store, draft: $suggestedPrompt)
+        .relatedSessionFlow(store: model.store, session: model.session, isPresented: $showRelatedSession)
         .confirmationDialog("Terminate this session?", isPresented: $confirmTerminate, titleVisibility: .visible) {
             Button("Terminate", role: .destructive) {
                 Task { if await model.terminate() { dismiss() } }
@@ -205,6 +207,8 @@ struct SessionDetailView: View {
                 Button("Copy session ID", systemImage: "doc.on.doc") {
                     UIPasteboard.general.string = session.sessionID
                 }
+                Divider()
+                Button("Start related session", systemImage: "plus.bubble") { showRelatedSession = true }
                 Divider()
                 Button("Sleep & archive", systemImage: "moon.zzz") {
                     Task { if await model.archive() { dismiss() } }

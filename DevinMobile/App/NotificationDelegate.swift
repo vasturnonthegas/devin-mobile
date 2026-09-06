@@ -12,6 +12,7 @@ final class NotificationDelegate: NSObject, UIApplicationDelegate, UNUserNotific
 
     func application(_ application: UIApplication, willFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         UNUserNotificationCenter.current().delegate = self
+        DiagnosticsCollector.install()
         return true
     }
 

@@ -39,9 +39,10 @@ extension MockAPI {
         files.first { $0.uuid == uuid && $0.name == name }?.bytes()
     }
 
-    static func messages(for sessionID: String) -> [SessionMessage] {
+    /// Messages that quote attachment URLs, so `SessionAttachmentsModel.placement(in:)` pins the
+    /// files under them. Appended to the markdown transcript by `MockAPI.messages(for:)`.
+    static func attachmentMessages(for sessionID: String, startingAt created: Date) -> [SessionMessage] {
         let index = Int(sessionID.suffix(3)) ?? 0
-        let created = sessions.first { $0.sessionID == sessionID }?.createdAt ?? .now
         var messages = [
             SessionMessage(eventID: "\(sessionID)-m1", source: .user,
                            message: "The login button overlaps the footer on small phones. Screenshot: \(files[0].url)",
